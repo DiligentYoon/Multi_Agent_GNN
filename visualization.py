@@ -162,7 +162,7 @@ def inflate_obstacles_viz(map_info, inflation_radius_cells: int = 5) -> np.ndarr
     """
     Belief map의 장애물 팽창
     """
-    belief_map = map_info.belief_frontier
+    belief_map = map_info.belief
     map_mask = map_info.map_mask
     
     if inflation_radius_cells <= 0:

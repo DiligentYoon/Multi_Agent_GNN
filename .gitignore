@@ -1,10 +1,9 @@
 *.gif
+*.pyc
 
 **/gifs/
 **/__pycache__/
 **/*.pyc
 **/results/
 **/*.png
-
-__pycache__/
 

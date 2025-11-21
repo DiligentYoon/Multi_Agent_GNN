@@ -63,6 +63,7 @@ class NavEnv(Env):
     
         # TODO: deleted later
         self.num_frontiers = np.zeros(self.num_agent, dtype=np.int_)
+        self.total_dt = 0
 
 
     def reset(self, episode_index: int = None):
@@ -208,9 +209,10 @@ class NavEnv(Env):
         : Frontier Graph
         : Robot Graph
         """
-
         # Global Frontier Marking
-        self.map_info.belief_frontier = global_frontier_marking(self.map_info)
+        self.map_info.belief_frontier, dt = global_frontier_marking(self.map_info)
+        self.total_dt += dt
+        
         # Frontier Graph Construction
 
         # Robot Graph Construction

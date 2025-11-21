@@ -4,6 +4,7 @@ import torch
 import math
 
 
+import time
 from typing import Any
 from sklearn.cluster import DBSCAN
 from scipy.optimize import linear_sum_assignment
@@ -407,6 +408,7 @@ def global_frontier_marking(map_info):
     Global Belief Map에 Frontier Marking
     TODO: 추후, Incremental Marking 방법 고려 (이전 스텝 검사 -> 이번 스텝 마킹)
     """
+    t1 = time.time()
     map = map_info
     belief = map.belief
     H, W = belief.shape
@@ -469,8 +471,9 @@ def global_frontier_marking(map_info):
     #     # 상태 업데이트
     #     frontier_belief[r_rm, c_rm] = belief[r_rm, c_rm]
     #     frontier_belief[r_new, c_new] = FRONTIER
+    t2 = time.time()
 
-    return frontier_belief
+    return frontier_belief, t2-t1
 
 
 def local_region_clustering(regions, scores, eps=0.1, min_samples=3):
