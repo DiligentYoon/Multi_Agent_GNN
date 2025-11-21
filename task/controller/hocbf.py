@@ -17,7 +17,8 @@ def get_nominal_input(p_target: list[np.ndarray] | np.ndarray,
                       w_max: float,
                       v_max: float,
                       device: torch.device,
-                      k_v: float = 1.0,
+                      k_v: float = 2.0,
+                      k_a: float = 1.0,
                       k_w: float = 1.5) -> np.ndarray:
 
         if isinstance(p_target, list):
@@ -36,7 +37,7 @@ def get_nominal_input(p_target: list[np.ndarray] | np.ndarray,
         # Target velocity based on distance
         v_target = np.clip(k_v_arr * dist_to_target, 0.0, v_max).reshape(-1, 1)
         # P-control for acceleration
-        a_ref = k_v * (v_target - v_current)
+        a_ref = k_a * (v_target - v_current)
         a_ref = np.clip(a_ref, -a_max, a_max)
         # P-control for angular velocity
         w_ref = np.clip(k_w_arr * angle_to_target, -w_max, w_max).reshape(-1, 1)

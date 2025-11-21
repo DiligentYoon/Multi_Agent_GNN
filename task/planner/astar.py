@@ -167,3 +167,25 @@ def inflate_obstacles(map_info: MapInfo, inflation_radius_cells: int = 2) -> np.
     inflated_map[dilated_obstacle_mask] = map_mask["occupied"]
     
     return inflated_map
+
+
+def is_path_valid(map_info: MapInfo, path_cells: np.ndarray) -> bool:
+    """
+    주어진 경로가 현재 belief map 상에서 유효한지(장애물과 충돌하지 않는지) 확인합니다.
+    """
+    if path_cells is None or len(path_cells) == 0:
+        return False
+    
+    rows, cols = path_cells[:, 0], path_cells[:, 1]
+    
+    # 경로가 맵 범위를 벗어나는지 확인
+    H, W = map_info.H, map_info.W
+    if np.any(rows < 0) or np.any(rows >= H) or np.any(cols < 0) or np.any(cols >= W):
+        return False
+
+    # belief map을 기준으로 경로상의 장애물 충돌 여부 확인
+    path_values = map_info.belief[rows, cols]
+    if np.any(path_values == map_info.map_mask["occupied"]):
+        return False
+        
+    return True

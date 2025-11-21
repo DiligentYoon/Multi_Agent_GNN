@@ -63,7 +63,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
     
-    obs, state, info = env.reset(episode_index=10)
+    obs, state, info = env.reset(episode_index=25)
     actions = None
     
     # --- Callback for rendering each physics step ---

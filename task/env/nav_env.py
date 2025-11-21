@@ -52,6 +52,10 @@ class NavEnv(Env):
         self.neighbor_states = np.zeros((self.num_agent, self.cfg.max_agents-1, 4), dtype=np.float32)
         self.neighbor_ids = np.zeros((self.num_agent, self.cfg.max_agents-1), dtype=np.int_)
 
+        # Replanning State
+        self.agent_paths = [None] * self.num_agent
+        self.agent_path_targets = [None] * self.num_agent
+
         # Done flags
         self.is_collided_obstacle = np.zeros((self.num_agent, 1), dtype=np.bool_)
         self.is_collided_drone = np.zeros((self.num_agent, 1), dtype=np.bool_)
@@ -80,6 +84,11 @@ class NavEnv(Env):
         """
         self.connectivity_traj = [[] for _ in range(self.num_agent)]
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
+        
+        # Reset replanning states
+        self.agent_paths = [None] * self.num_agent
+        self.agent_path_targets = [None] * self.num_agent
+
         obs, state, info = super().reset(episode_index)
 
         return obs, state, info
@@ -567,19 +576,57 @@ class NavEnv(Env):
                 start_cell = self.map_info.world_to_grid_np(pos_i) # (col, row)
                 end_cell = self.map_info.world_to_grid_np(pos_i_op) # (col, row)
             
-            path_cells = astar_search(self.map_info,
-                                      start_pos=np.flip(start_cell),
-                                      end_pos=np.flip(end_cell),
-                                      agent_id=i) # (row, col)
+
+            # ==== Path Planning ====
+            replan = False
+            current_path_cells = self.agent_paths[i]
+            current_target_cell = self.agent_path_targets[i]
+
+            # 1. 맨 처음이거나 경로가 없는 경우
+            if current_path_cells is None:
+                replan = True
+            # 2. 타겟 포인트가 바뀐 경우
+            elif not np.array_equal(end_cell, current_target_cell):
+                replan = True
+            # 3. 기존 경로가 더 이상 유효하지 않은 경우 (장애물 충돌)
+            elif not is_path_valid(self.map_info, np.array(current_path_cells)):
+                replan = True
+
+            if replan:
+                path_cells = astar_search(self.map_info,
+                                          start_pos=np.flip(start_cell),
+                                          end_pos=np.flip(end_cell),
+                                          agent_id=i)               # (row, col)
+                if path_cells is not None and len(path_cells) > 0:
+                    self.agent_paths[i] = path_cells                # (row, col)
+                    self.agent_path_targets[i] = end_cell           # (row, col)
+                else:
+                    # 경로 생성 실패 시, 현재 위치 고정
+                    self.agent_paths[i] = np.flip(start_cell)
+                    self.agent_path_targets[i] = start_cell
+                
+                path_cells = self.agent_paths[i]
+
+            else:
+                # 기존 경로 유지
+                path_cells = self.agent_paths[i]
+                if len(path_cells) > 1:
+                    path_world_coords = self.map_info.grid_to_world_np(np.flip(path_cells, axis=1)) # (row, col) -> (col, row) -> (x, y)
+                    distances = np.linalg.norm(path_world_coords - pos_i, axis=1)
+                    closest_idx = np.argmin(distances)
+                    # 가장 가까운 지점부터 끝까지의 경로를 새로운 경로로 사용
+                    path_cells = path_cells[closest_idx:]
+                    self.agent_paths[i] = path_cells
+
             if path_cells is not None and len(path_cells) > 0:
                 # Path 생성된 경우
-                optimal_traj = self.map_info.grid_to_world_np(np.flip(path_cells, axis=1)) # (col, row) -> (x, y)
+                optimal_traj = self.map_info.grid_to_world_np(np.flip(path_cells, axis=1)) # (row, col) -> (col, row) -> (x, y)
             else:
                 # Path 없는 경우
                 optimal_traj = np.array([self.robot_locations[i]])
             optimal_traj_local = world_to_local(w1=pos_i, w2=optimal_traj, yaw=yaw_i)
             distances = np.linalg.norm(optimal_traj_local, axis=1)
-            ids = np.where(distances >= 0.1)[0]
+            ids = np.where(distances >= self.cfg.d_safe*2)[0]
             if len(ids) > 0:
                 target_pos = optimal_traj_local[ids[0]]
             else:
