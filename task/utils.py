@@ -1,7 +1,10 @@
 import copy
 import numpy as np
 import torch
+import math
 
+
+from typing import Any
 from sklearn.cluster import DBSCAN
 from scipy.optimize import linear_sum_assignment
 from scipy.ndimage import distance_transform_edt as edt
@@ -308,8 +311,101 @@ def sensor_work_heading(robot_position,
     return robot_belief
 
 
-def global_frontier_marking(map_info, reset_flag, frontier_cells: list[np.ndarray] = None):
+def sense(robot_pos: np.ndarray,
+          map_info: Any,
+          sensor_range: float,
+          num_rays: int,
+          fov: int) -> np.ndarray:
     """
+    Raycast in FOV
+    
+        Inputs:
+            - robot_pos
+            - map_info
+            - sensor_range
+            - num_rays
+            - fov
+        Return:
+            - obs_local:       [(lx, ly), ...] 
+    """
+    maps = map_info
+    H, W = maps.H, maps.W
+    half = math.radians(fov / 2.0)
+    angles = np.linspace(-half, half, num_rays)
+
+    obs_local: list[tuple[float, float]] = []
+    # frontier_local: list[tuple[float, float]] = []
+    # frontier_rc: list[tuple[int, int]] = []
+
+    for a in angles:
+        ang = robot_pos[2] + a
+        step = maps.res_m
+        L = int(sensor_range / step)
+
+        last_rc = None
+        hit_recorded = False          # per-ray: obs 최대 1개
+        # frontier_candidate_rc = None  # per-ray: frontier 후보(마지막 FREE∧UNKNOWN-인접)
+
+        for i in range(1, L + 1):
+            x = robot_pos[0] + i * step * math.cos(ang)
+            y = robot_pos[1] + i * step * math.sin(ang)
+            if x < 0 or y < 0 or x > maps.meters_w or y > maps.meters_h:
+                break
+
+            r, c = maps.world_to_grid(x, y)
+            if last_rc == (r, c):
+                continue
+            last_rc = (r, c)
+            if maps.gt[r, c] == maps.map_mask["occupied"]:
+                # 첫 OCC 히트만 기록
+                maps.belief[r, c] = maps.map_mask["occupied"]
+                if not hit_recorded:
+                    dx = x - robot_pos[0]; dy = y - robot_pos[1]
+                    cth = math.cos(-robot_pos[2]); sth = math.sin(-robot_pos[2])
+                    lx = cth*dx - sth*dy; ly = sth*dx + cth*dy
+                    obs_local.append((lx, ly))
+                    hit_recorded = True
+                break  # 이 ray 종료 (더 이상 진행 X)
+            else:
+                # 관측된 FREE 갱신
+                if maps.belief[r, c] != maps.map_mask["start"]:
+                    maps.belief[r, c] = maps.map_mask["free"]
+
+                # # 이 셀의 8-이웃 중 UNKNOWN이 있으면 'frontier 후보'
+                # found_unknown = False
+                # for dr in (-1, 0, 1):
+                #     for dc in (-1, 0, 1):
+                #         if dr == 0 and dc == 0:
+                #             continue
+                #         rr = r + dr; cc = c + dc
+                #         if 0 <= rr < H and 0 <= cc < W and maps.belief[rr, cc] == maps.map_mask["unknown"]:
+                #             found_unknown = True
+                #             break
+                #     if found_unknown:
+                #         break
+
+                # # frontier 후보는 ray를 따라 '마지막으로' 갱신하여, 경계에 가장 가까운 FREE를 선택
+                # if found_unknown:
+                #     frontier_candidate_rc = (r, c)
+
+        # # ray가 끝난 뒤, 후보가 있으면 frontier를 1개만 최종 채택
+        # if frontier_candidate_rc is not None:
+        #     r, c = frontier_candidate_rc
+        #     wx, wy = maps.grid_to_world(r, c)
+        #     dx = wx - robot_pos[0]; dy = wy - robot_pos[1]
+        #     cth = math.cos(-robot_pos[2]); sth = math.sin(-robot_pos[2])
+        #     lx = cth*dx - sth*dy; ly = sth*dx + cth*dy
+        #     frontier_local.append((lx, ly))
+        #     frontier_rc.append((r, c))
+
+    return np.array(obs_local)
+    # return np.array(frontier_local), np.array(frontier_rc), np.array(obs_local)
+
+
+def global_frontier_marking(map_info):
+    """
+    Global Belief Map에 Frontier Marking
+    TODO: 추후, Incremental Marking 방법 고려 (이전 스텝 검사 -> 이번 스텝 마킹)
     """
     map = map_info
     belief = map.belief
@@ -375,3 +471,153 @@ def global_frontier_marking(map_info, reset_flag, frontier_cells: list[np.ndarra
     #     frontier_belief[r_new, c_new] = FRONTIER
 
     return frontier_belief
+
+
+def local_region_clustering(regions, scores, eps=0.1, min_samples=3):
+    """
+        Information Gain 기반의 Regions Clustering을 수행.
+
+    """
+    scores_np = np.array(scores).reshape(-1, 1)
+    try:
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(scores_np)
+    except:
+        db = DBSCAN(eps=eps, min_samples=1).fit(scores_np)
+    labels = db.labels_ 
+
+    clusters = {}
+    for i, label in enumerate(labels):
+        label = int(label)
+
+        if label not in clusters:
+            clusters[label] = {'regions':[], 'scores': []}
+        
+        clusters[label]['regions'].append(regions[i])
+        clusters[label]['scores'].append(scores[i])
+
+    return clusters
+
+
+def minimum_offset_prob(x):
+    """
+        음수 Score를 올바르게 확률로 변환하기 위한 선형 Shifting
+
+        Input :
+            x : scores
+    """
+    if isinstance(x, list):
+        x = np.array(x)
+    if x.size == 0:
+        return [] # 빈 리스트 처리
+
+    min_val = np.min(x)
+    shift = abs(min_val) if min_val < 0 else 0.0
+
+    weighted_values = x + shift
+    
+    total_sum = np.sum(weighted_values)
+
+    if total_sum == 0:
+        # 모든 영역의 가중치가 0인 경우, 모든 셀에 동일한 확률 부여
+        num_items = len(weighted_values)
+        if num_items == 0:
+            return []
+        return [1.0 / num_items] * num_items
+    
+    # 3. 정규화된 확률 반환
+    probabilities = weighted_values / total_sum
+    return probabilities.tolist()
+
+
+def sample_k_targets_in_multi_regions_value(map_info, cluster_info, k, rng):
+    """
+        Local 분할 영역의 Cluster를 이용한 Target Point Sampling
+        
+        Inputs:
+            maps : map_info 객체 (frontier가 마킹되어있는 beliefMap을 사용 가능함)
+            Cluster_info : 군집 정보 {regions, scores} = 속한 영역들과, 그에 대응하는 점수 정보
+    """
+    bel = map_info.belief
+    map_mask = map_info.map_mask
+    if rng is None:
+        rng = np.random.default_rng()
+    else:
+        rng = np.random.default_rng(int(rng))
+    cluster_total_scores = []
+    cluster_labels = []
+    per_cluster_data = {}
+
+    # 각 클러스터에서 Score Weighted Uniform Sampling
+    for label, data in cluster_info.items():
+        if label == -1:
+            continue
+        
+        cluster_regions = data['regions']
+        cluster_scores = data['scores']
+        if not cluster_regions:
+            continue
+        
+        region_scores = []
+        for i in range(len(cluster_regions)):
+            (r0, r1, c0, c1) = cluster_regions[i]
+            area = max(1, (r1 - r0) * (c1 - c0))
+            score = cluster_scores[i]
+            region_scores.append(score * area)
+        # 단일 클러스터에 대한 정보 저장
+        cluster_total_score = sum(region_scores)
+        cluster_labels.append(label)
+        cluster_total_scores.append(cluster_total_score)
+
+        region_probs = minimum_offset_prob(region_scores)
+        per_cluster_data[label] = {'region_probs': region_probs}
+
+    cluster_probs = minimum_offset_prob(cluster_total_scores)
+
+    # K개의 Sampling Point 생성
+    targets_rc = []
+    targets_prob = []
+    for _ in range(k):
+        target_cluster_id = rng.choice(cluster_labels, p=cluster_probs)
+
+        regions_in_cluster = cluster_info[target_cluster_id]['regions']
+        region_probs = per_cluster_data[target_cluster_id]['region_probs']
+
+        target_region_id = rng.choice(len(regions_in_cluster), p=region_probs)
+        (r0, r1, c0, c1) = regions_in_cluster[target_region_id]
+
+        while True:
+            r = rng.integers(r0, r1)
+            c = rng.integers(c0, c1)
+            if bel[r, c] == map_mask["occupied"]:
+                continue
+            targets_rc.append((r, c))
+            break
+        targets_prob.append(region_probs[target_region_id])
+    
+    return targets_rc, targets_prob, np.array(cluster_labels)
+
+
+def pair_cost(maps, robot_pos, target_rc):
+    ax, ay = robot_pos
+    tr, tc = int(target_rc[0]), int(target_rc[1])
+    tx, ty = maps.grid_to_world(tr, tc)
+
+    return float(np.hypot(tx - ax, ty - ay))
+
+
+def assign_targets_hungarian(maps, robot_pos, targets_rc, num_agent):
+    """
+    targets_rc: list[(gr,gc)] 
+    return: assigned_rc[i] = (gr,gc)
+    """
+    N = num_agent
+    M = len(targets_rc)
+    C = np.zeros((N, M), dtype=np.float32)
+    for i in range(N):
+        for j in range(M):
+            C[i, j] = pair_cost(maps, robot_pos[i], targets_rc[j])
+
+    row, col = linear_sum_assignment(C)  # row: 0..N-1
+    assigned = [targets_rc[col[i]] for i in range(N)]
+
+    return assigned

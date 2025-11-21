@@ -142,7 +142,7 @@ class Env():
         self.robot_locations = np.zeros((self.num_agent, 2), dtype=np.float32)
         self.robot_velocities = np.zeros((self.num_agent, 2), dtype=np.float32)
         self.robot_angles = np.zeros((self.num_agent, 1), dtype=np.float32)
-        self.robot_yaw_rate = np.zeros((self.num_agent, 1), dtype=np.float32)
+        self.robot_yaw_rate = np.zeros(self.num_agent, dtype=np.float32)
 
         self.num_step = 0
         self.reached_goal = np.zeros((self.cfg.num_agent, 1), dtype=np.bool_)
@@ -216,7 +216,6 @@ class Env():
         for i in range(self.cfg.decimation):
             # action을 적용하여 robot state 업데이트
             self._apply_actions()
-            
             # Belief 업데이트
             for j in range(self.num_agent):
                 # 이미 도달한 에이전트는 상태 업데이트 X

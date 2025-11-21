@@ -68,113 +68,84 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results'):
     cbf_history   = [[] for _ in range(num_agents)]
     connectivity_pairs = []
     demo = False
-    # try:
-    #     obs, state, info = env.reset(episode_index=10)
-    #     for step_num in range(steps):
-    #         if demo:
-    #             demo_nominal = get_nominal_control(p_target=info["nominal"]["p_targets"],
-    #                                                on_search=info["nominal"]["on_search"],
-    #                                                v_current=info["safety"]["v_current"],
-    #                                                a_max=env.max_lin_acc,
-    #                                                w_max=env.max_ang_vel,
-    #                                                v_max=env.max_lin_vel)
-    #             raw_actions = torch.tensor(demo_nominal / 
-    #                                         np.array([env.max_lin_acc, 
-    #                                                   env.max_ang_vel])).to(device=device)
-                
-    #             actions, feasible = agent.safety(raw_actions, info["safety"])
+    
+    obs, state, info = env.reset(episode_index=10)
+    actions = None
+    for step_num in range(steps):
+        next_obs, next_state, reward, terminated, truncated, next_info = env.step(actions)
+        done = np.any(terminated) or np.any(truncated)
 
-    #         else:
-    #             raw_actions, actions, _, feasible = agent.act(obs, safety_info=info["safety"], deterministic=True)
+        # --- Record data ---
+        for j in range(num_agents):
+            # Obstacle
+            obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
+            if env.num_obstacles[j] == 0:
+                min_obs_state[j].append(np.array([0.3, 0.3]))
 
-    #         # --- Environment steps ---
-    #         next_obs, next_state, reward, terminated, truncated, next_info = env.step(actions)
-    #         done = np.any(terminated) or np.any(truncated)
+                min_dist = env.cfg.sensor_range**2
+            else:
+                dist = np.linalg.norm(obs_state, axis=1)
+                min_ids = np.argmin(dist)
+                min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
+                min_obs_state[j].append(obs_state[min_ids].copy())
             
-    #         # # --- Record data ---
-    #         for j in range(num_agents):
-    #             # Obstacle
-    #             obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
-    #             if env.num_obstacles[j] == 0:
-    #                 min_obs_state[j].append(np.array([0.3, 0.3]))
+            # Connetctivity
+            p_c = env.cbf_infos["safety"]["p_c_agent"][j].reshape(-1)
+            if len(p_c) > 0:
+                min_agent_dist = p_c[0]**2 + p_c[1]**2
+            else:
+                min_agent_dist = 0
+            agent_cbf_info = {"obs_avoid": min_dist-env.cfg.d_safe**2,
+                              "agent_conn": env.neighbor_radius**2 - min_agent_dist}
 
-    #                 min_dist = 0.3**2
-    #             else:
-    #                 dist = np.linalg.norm(obs_state, axis=1)
-    #                 min_ids = np.argmin(dist)
-    #                 min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
-    #                 min_obs_state[j].append(obs_state[min_ids].copy())
-                
-    #             # Connetctivity
-    #             p_c = next_info["safety"]["p_c_agent"][j].reshape(-1)
-    #             if len(p_c) > 0:
-    #                 min_agent_dist = p_c[0]**2 + p_c[1]**2
-    #             else:
-    #                 min_agent_dist = 0
+            # Create a list of agent pairs for connectivity visualization
+            connectivity_pairs = []
+            for i in range(env.num_agent):
+                pos1 = env.robot_locations[i]
+                if not env.root_mask[i]:
+                    parent_id = env.connectivity_graph.get_parent(i)
+                    pos2 = env.robot_locations[parent_id]
+                else:
+                    pos2 = pos1
+                connectivity_pairs.append((pos1, pos2))
 
-    #             agent_cbf_info = {"obs_avoid": min_dist-env.cfg.d_obs**2,
-    #                               "agent_conn": env.neighbor_radius**2 - min_agent_dist}
+            # List Data
+            path_history[j].append((env.robot_locations[j, 0], env.robot_locations[j, 1]))
+            cbf_history[j].append(agent_cbf_info)
 
-    #             path_history[j].append((env.robot_locations[j, 0], env.robot_locations[j, 1]))
-    #             nominal_inputs_history[j].append(raw_actions[j].cpu().numpy())
-    #             safe_inputs_history[j].append(actions[j].cpu().numpy())
-    #             cbf_history[j].append(agent_cbf_info)
+        # --- Visualization ---    
+        # Create a dictionary with visualization data
+        viz_data = {
+            "paths": path_history,
+            "obs_local": env.obstacle_states,
+            "connectivity_pairs": connectivity_pairs, # Add pairs to viz_data
+            "target_local": env.cbf_infos["nominal"]["p_targets"],
+            "connectivity_trajs": env.connectivity_traj,
+        }
 
-    #         print(f"Step: {step_num + 1}/{steps} | Done: {done} | # of Clusters : {len(env.cluster_infos.keys())}")
+        # Call the new draw_frame function
+        draw_frame(ax1, ax2, env, viz_data)
+        
+        fig.canvas.draw()
+        buf = fig.canvas.buffer_rgba()
+        frame = np.asarray(buf, dtype=np.uint8)[..., :3]
+        frames.append(frame.copy())
 
-    #         # # --- Visualization ---
-    #         # Create a list of agent pairs for connectivity visualization
-    #         connectivity_pairs = []
-    #         for i in range(env.num_agent):
-    #             pos1 = env.robot_locations[i]
-    #             if not env.root_mask[i]:
-    #                 parent_id = env.connectivity_graph.get_parent(i)
-    #                 pos2 = env.robot_locations[parent_id]
-    #             else:
-    #                 pos2 = pos1
-    #             connectivity_pairs.append((pos1, pos2))
-                
+        print(f"Step : {step_num} | Physics Step : {step_num*env.decimation}")
 
-    #         # Create a dictionary with visualization data
-    #         viz_data = {
-    #             "paths": path_history,
-    #             "obs_local": env.obstacle_states,
-    #             "last_cmds": [(actions[i][0], actions[i][1]) for i in range(num_agents)],
-    #             "connectivity_pairs": connectivity_pairs, # Add pairs to viz_data
-    #             "target_local": info["nominal"]["p_targets"],
-    #             "connectivity_trajs": env.connectivity_traj,
-    #         }
+        obs = next_obs
+        state = next_state
+        info = next_info
+    
 
-    #         # Call the new draw_frame function
-    #         draw_frame(ax1, ax2, env, viz_data)
-            
-    #         fig.canvas.draw()
-    #         buf = fig.canvas.buffer_rgba()
-    #         frame = np.asarray(buf, dtype=np.uint8)[..., :3]
-    #         frames.append(frame.copy())
-
-    #         obs = next_obs
-    #         state = next_state
-    #         info = next_info
-
-    #         if done:
-    #             print("Simulation ended because 'done' is True.")
-    #             break
-
-    # except Exception as e:
-    #     print(f"{e}")
-    #     traceback.print_exc()
-
-    # finally:
-    #     plt.close(fig)
-    #     # --- Save GIF ---
-    #     gif_path = os.path.join(out_dir, 'simulation_test.gif')
-    #     print(f"Saving GIF to {gif_path}...")
-    #     imageio.mimsave(gif_path, frames, fps=30)
-    #     print("GIF saved.")
-    #     # # --- Generate and Save Plots ---
-    #     plot_cbf_values(cbf_history, env.dt, num_agents, save_path=os.path.join(out_dir, 'cbf_values.png'))
-
+    plt.close(fig)
+    # --- Save GIF ---
+    gif_path = os.path.join(out_dir, 'simulation_test.gif')
+    print(f"Saving GIF to {gif_path}...")
+    imageio.mimsave(gif_path, frames, fps=5)
+    print("GIF saved.")
+    # # --- Generate and Save Plots ---
+    plot_cbf_values(cbf_history, env.dt, num_agents, save_path=os.path.join(out_dir, 'cbf_values.png'))
     print("=== Simulation Test Finished ===")
 
 
@@ -188,4 +159,4 @@ if __name__ == '__main__':
     np.random.seed(config['env']['seed'])
     
     # Run the test
-    run_simulation_test(config, steps=1000)
+    run_simulation_test(config, steps=50)

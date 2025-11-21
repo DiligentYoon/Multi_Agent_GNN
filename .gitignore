@@ -1,0 +1,10 @@
+*.gif
+
+**/gifs/
+**/__pycache__/
+**/*.pyc
+**/results/
+**/*.png
+
+__pycache__/
+

@@ -5,8 +5,11 @@ from typing import Tuple, List
 from task.base.env.env import Env
 from task.controller.hocbf import DifferentiableHOCBFLayer
 from task.graph.graph import ConnectivityGraph
-from task.graph.graph_utils import *
+from task.planner.astar import *
 from task.utils import *
+
+from task.graph.kdtree import RegionKDTree
+from task.graph.tree_utils import *
 
 
 from .nav_env_cfg import NavEnvCfg
@@ -36,8 +39,10 @@ class NavEnv(Env):
         self.controller = DifferentiableHOCBFLayer(cfg=self.cfg.controller, device=self.device)
 
         # Planning State
+        self.global_kd_tree = RegionKDTree((0, self.map_info.H, 0, self.map_info.W), valid_threshold=0.05)
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         self.local_frontiers = np.zeros((self.num_agent, self.cfg.num_rays, 2), dtype=np.float32)
+        self.root_mask = np.zeros(self.num_agent, dtype=np.int_)
         self.connectivity_graph = ConnectivityGraph(self.num_agent)
         self.connectivity_traj = [[] for _ in range(self.num_agent)]
         self.num_obstacles = np.zeros(self.num_agent, dtype=np.int_)
@@ -50,13 +55,15 @@ class NavEnv(Env):
         # Done flags
         self.is_collided_obstacle = np.zeros((self.num_agent, 1), dtype=np.bool_)
         self.is_collided_drone = np.zeros((self.num_agent, 1), dtype=np.bool_)
-        self.is_reached_goal = np.zeros((self.num_agent, 1), dtype=np.bool_)
 
         # Additional Info
         self.cbf_infos = {}
         self.cbf_infos["safety"] = {}
         self.cbf_infos["nominal"] = {}
     
+        # TODO: deleted later
+        self.num_frontiers = np.zeros(self.num_agent, dtype=np.int_)
+
 
     def reset(self, episode_index: int = None):
         """
@@ -68,8 +75,9 @@ class NavEnv(Env):
             Returns:
                 obs : observation vector
                 state : state vector
-                info : additional information [safety info, nominal control info]
+                info : additional information
         """
+        self.connectivity_traj = [[] for _ in range(self.num_agent)]
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         obs, state, info = super().reset(episode_index)
 
@@ -78,45 +86,67 @@ class NavEnv(Env):
     
     def _pre_apply_action(self, actions):
         """
-        제어 입력을 계산하기 위한 전처리 작업 수행
+        [Centralized] 제어 입력을 계산하기 위한 전처리 작업 수행
         1. Target Point action을 받아서 각 에이전트에게 할당
-        2. Leader Agent 지정
+        2. MST 업데이트 with Leader Agent 지정
+
             Inputs:
                 actions : 에이전트 별 Target Point
         """
-        return super()._pre_apply_action(actions)
+        pass
 
 
     def _apply_actions(self):
         """
-        모든 Agent의 제어 입력 (선가속도, 각속도)을 계산하고, 제어 입력에 따른 State Update
+        [Decentralized] 모든 Agent의 제어 입력 (선가속도, 각속도)을 계산하고, 제어 입력에 따른 State Update
         """
+        # Per-step CBF Info 업데이트
+        self.update_cbf_infos()
+        # 제어 입력 계산
+        control_inputs, feasible = self.controller(self.cbf_infos["nominal"], self.cbf_infos["safety"])
         active_mask = ~self.reached_goal.squeeze()
 
         # 1. 속도 업데이트 (선속도)
-        self.robot_speeds[active_mask] += self.preprocessed_actions[active_mask, 0] * self.dt
-        self.robot_speeds[active_mask] = np.clip(self.robot_speeds[active_mask], 0.0, self.max_lin_vel)
+        speeds = self.robot_speeds[active_mask] + control_inputs[active_mask, 0] * self.dt
+        self.robot_speeds[active_mask] = np.clip(speeds, 0.0, self.max_lin_vel)
         
         # 2. 위치 업데이트
         current_angles = self.robot_angles[active_mask]
-        speeds = self.robot_speeds[active_mask]
-        self.robot_locations[active_mask, 0] += speeds * np.cos(current_angles).flatten() * self.dt
-        self.robot_locations[active_mask, 1] += speeds * np.sin(current_angles).flatten() * self.dt
+        self.robot_locations[active_mask, 0] += self.robot_speeds[active_mask] * np.cos(current_angles) * self.dt
+        self.robot_locations[active_mask, 1] += self.robot_speeds[active_mask] * np.sin(current_angles) * self.dt
         
         # 3. 각도 업데이트
-        yaw_rates = np.clip(self.preprocessed_actions[active_mask, 1], -self.max_ang_vel, self.max_ang_vel)
-        self.robot_yaw_rate[active_mask] = yaw_rates.reshape(-1, 1)
-        new_angles = ((current_angles + self.robot_yaw_rate[active_mask] * self.dt + np.pi) % (2 * np.pi)) - np.pi
+        yaw_rates = np.clip(control_inputs[active_mask, 1], -self.max_ang_vel, self.max_ang_vel)
+        new_angles = ((current_angles + yaw_rates * self.dt + np.pi) % (2 * np.pi)) - np.pi
+        self.robot_yaw_rate[active_mask] = yaw_rates
         self.robot_angles[active_mask] = new_angles
         
         # 4. World Frame 속도 벡터 업데이트
-        self.robot_velocities[active_mask, 0] = self.robot_speeds[active_mask] * np.cos(new_angles).flatten()
-        self.robot_velocities[active_mask, 1] = self.robot_speeds[active_mask] * np.sin(new_angles).flatten()
+        self.robot_velocities[active_mask, 0] = self.robot_speeds[active_mask] * np.cos(new_angles)
+        self.robot_velocities[active_mask, 1] = self.robot_speeds[active_mask] * np.sin(new_angles)
+    
+
+    def _get_observations(self) -> np.ndarray | list[dict]:
+        """
+        """
+        return None
+    
+
+    def _get_states(self) -> np.ndarray | list[dict]:
+        """
+        """
+        return copy.deepcopy(self.obs_buf)
+    
+
+    def _get_rewards(self):
+        """
+        """
+        pass
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        특정 종료조건 및 타임아웃 계산
+        [Centralized] 특정 종료조건 및 타임아웃 계산
 
             Return :
                 1. terminated : 
@@ -140,7 +170,7 @@ class NavEnv(Env):
         rows, cols = cells[:, 1], cells[:, 0]
 
         # 목표 도달 유무 체크
-        self.is_reached_goal = (self.map_info.gt[rows, cols] == self.map_info.map_mask["goal"]).reshape(-1, 1)
+        reached_goal = (self.map_info.gt[rows, cols] == self.map_info.map_mask["goal"]).reshape(-1, 1)
 
         # 맵 경계 체크
         H, W = self.map_info.H, self.map_info.W
@@ -167,69 +197,36 @@ class NavEnv(Env):
                 self.is_collided_drone[agent_idx] = True
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
-        terminated = self.is_collided_obstacle | self.is_collided_drone | self.is_reached_goal
+        terminated = self.is_collided_obstacle | self.is_collided_drone | reached_goal
 
-        return terminated, truncated, self.is_reached_goal
+        return terminated, truncated, reached_goal
 
 
     def _compute_intermediate_values(self):
         """
-        업데이트된 state값들을 바탕으로, Planning state 계산
+        [Centralized] 업데이트된 state값들을 바탕으로, Planning state 계산
+        : Frontier Graph
+        : Robot Graph
         """
-        drone_pos = np.hstack((self.robot_locations, self.robot_angles.reshape(-1, 1)))
 
-        # --- Zero-Padding Initialization ---
-        self.neighbor_states.fill(0)
-        self.obstacle_states.fill(0)  
-        self.local_frontiers.fill(0)
-        self.neighbor_ids.fill(0)
+        # Global Frontier Marking
+        self.map_info.belief_frontier = global_frontier_marking(self.map_info)
+        # Frontier Graph Construction
+
+        # Robot Graph Construction
+
+        # TODO: This part is deleted later. Only for test
+        total_local_regions = []
+        total_local_scores = []
         frontier_cells = [[] for _ in range(self.num_agent)]
-        # -----------------------------------
-
         for i in range(self.num_agent):
-            # Pos
-            drone_pos_i = drone_pos[i]
-            # lx, ly
-            rel_pos = world_to_local(w1=drone_pos_i[:2], w2=drone_pos[:, :2], yaw=drone_pos_i[2])
-            # v_jx, v_jy
-            rel_vel = world_to_local(w1=None, w2=self.robot_velocities, yaw=drone_pos_i[2])
-            # sqrt(lx^2 + lx^2)
-            distance = np.linalg.norm(rel_pos, axis=1)
-            # [Decentralized] 자기자신 제외한 모든 Agent Global Ids
-            other_agent_ids = np.where(distance > 1e-5)[0]
-            # [Decentralized] Local Graph 반경에 포함된 이웃 Agent Global Ids
-            neighbor_agent_ids = np.where(np.logical_and(distance <= self.neighbor_radius, distance > 1e-5))[0]
-
-            # Neighbor State for Agent Collision Avoidance
-            self.num_neighbors[i] = len(neighbor_agent_ids)
-            if self.num_neighbors[i] > 0:
-                self.neighbor_states[i, :self.num_neighbors[i], :2] = rel_pos[neighbor_agent_ids]
-                self.neighbor_states[i, :self.num_neighbors[i], 2:] = rel_vel[neighbor_agent_ids]
-                self.neighbor_ids[i, :self.num_neighbors[i]] = neighbor_agent_ids # Global Ids
-            else:
-                # 0개인 경우 (Connectivity Slack으로 인한 예외상황) : 가장 가까운 Agent가 neighbors
-                closest_neighbor_id_local = np.argmin(distance[other_agent_ids])
-                closest_neighbor_id_global = other_agent_ids[closest_neighbor_id_local]
-                self.num_neighbors[i] = 1
-                self.neighbor_states[i, 0, :2] = rel_pos[closest_neighbor_id_global]
-                self.neighbor_states[i, 0, 2:] = rel_vel[closest_neighbor_id_global]
-                self.neighbor_ids[i, 0] = closest_neighbor_id_global # Global Ids
-
-            # Obstacles & Frontiers Sensing
-            local_frontiers, frontiers_cell, local_obstacles = self.sense_and_update(agent_id=i)
+            local_frontiers, frontiers_cell = self.detect_frontier(agent_id=i)
 
             bel = self.map_info.belief
             bel[bel == self.map_info.map_mask["frontier"]] = self.map_info.map_mask["free"]
             for r, c in frontiers_cell:
                 if bel[r, c] == self.map_info.map_mask["free"]: bel[r, c] = self.map_info.map_mask["frontier"]
-
-            # Store obstacle information
-            num_obs = min(len(local_obstacles), self.cfg.max_obs)
-            if num_obs > 0:
-                self.obstacle_states[i, :num_obs] = local_obstacles[:num_obs]
-            else:
-                self.obstacle_states[i, :] = 0
-            self.num_obstacles[i] = num_obs
+            
             # Store frontier information
             num_frontiers = min(len(local_frontiers), self.cfg.num_rays)
             if num_frontiers > 0:
@@ -238,14 +235,44 @@ class NavEnv(Env):
                 self.local_frontiers[i, :] = 0
             self.num_frontiers[i] = num_frontiers
             frontier_cells[i].append(frontiers_cell)
-        
-        # 마지막 루프에 대한 Frontier Marking 정리
         bel[bel == self.map_info.map_mask["frontier"]] = self.map_info.map_mask["free"]
 
-        # Update된 Belief Map에 대한 Frontier 마킹
-        reset_flag = np.all(self.map_info.belief_frontier == self.map_info.map_mask["unknown"])
-        self.map_info.belief_frontier = global_frontier_marking(self.map_info, reset_flag, frontier_cells)
+        # ==================== 임시 할당 코드 ==========================
+        root_id = np.argmax(self.num_frontiers)
+        self.root_mask.fill(0)
+        self.root_mask[root_id] = 1
+        self.connectivity_graph.update_and_compute_mst(self.robot_locations, root_id)
 
+
+        # 1) Global KD-Tree Valid Node 선택 & 점수 할당
+        regions = self.global_kd_tree.leaves
+        valid_regions = self.global_kd_tree.update_node_states(self.map_info, self.robot_locations)
+        # 2) Local KD-Tree 빌드 & 점수 할당
+        for region in valid_regions:
+            local_regions, local_scores = split_and_score_local_region(region.bounds, self.robot_locations, self.map_info)
+            total_local_regions.extend(local_regions)
+            total_local_scores.extend(local_scores)
+        # 3) Local Region Clustering w.r.t each score
+        if total_local_regions:
+            cluster_infos = local_region_clustering(total_local_regions, total_local_scores)
+        else:
+            # 예외 처리 필요
+            raise ValueError("No valid local regions found.")
+        # 4) Target Point Generation
+        targets_rc, targets_prob, valid_cluster_ids = sample_k_targets_in_multi_regions_value(self.map_info, 
+                                                                                              cluster_infos,
+                                                                                              k=self.num_agent*3, 
+                                                                                              rng=self.seed)
+        # 5) Point Allocation by Hungarian algorithms
+        assigned_rc = assign_targets_hungarian(self.map_info, self.robot_locations, targets_rc, self.num_agent)
+        # 6) Memory for cascade system
+        self.regions = regions
+        self.valid_regions = valid_regions
+        self.assigned_rc = np.array(assigned_rc)
+
+
+    def _update_infos(self):
+        pass
 
 
 
@@ -254,7 +281,7 @@ class NavEnv(Env):
     def _set_init_state(self,
                         max_attempts: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Initial State를 스폰 기준에 맞게 세팅
+        [Centralized] Initial State를 스폰 기준에 맞게 세팅
 
             Inputs:
                 max_attempts (int): 최대 시도 횟수.
@@ -303,17 +330,276 @@ class NavEnv(Env):
 
         raise RuntimeError(f"No valid starting positions found within {max_attempts}")
     
-    def update_cbf_infos(self, agent_id: int):
+
+
+    def detect_frontier(self, 
+                        agent_id: int) -> tuple[np.ndarray, np.ndarray]:
         """
-        HOCBF Safety Filter에 필요한 정보를 각 Agent에 대해서 업데이트
+            Raycast in FOV, update belief FREE/OCCUPIED 
+                Inputs:
+                    - agent_id: Agent Numbering
+                Return:
+                    - frontier_local:  [(lx, ly), ...]  
+                    - frontier_rc:     [(row, col), ...] 
+                    - obs_local:       [(lx, ly), ...] 
+        """
+        drone_pose = np.hstack((self.robot_locations[agent_id], self.robot_angles[agent_id]))
+        maps = self.map_info
+        H, W = maps.H, maps.W
+        half = math.radians(self.fov / 2.0)
+        angles = np.linspace(-half, half, self.cfg.num_rays)
+    
+        frontier_local: List[Tuple[float, float]] = []
+        frontier_rc: List[Tuple[int, int]] = []
+    
+        for a in angles:
+            ang = drone_pose[2] + a
+            step = maps.res_m
+            L = int(self.sensor_range / step)
+    
+            last_rc = None
+            hit_recorded = False          # per-ray: obs 최대 1개
+            frontier_candidate_rc = None  # per-ray: frontier 후보(마지막 FREE∧UNKNOWN-인접)
+    
+            for i in range(1, L + 1):
+                x = drone_pose[0] + i * step * math.cos(ang)
+                y = drone_pose[1] + i * step * math.sin(ang)
+                if x < 0 or y < 0 or x > maps.meters_w or y > maps.meters_h:
+                    break
+    
+                r, c = maps.world_to_grid(x, y)
+                if last_rc == (r, c):
+                    continue
+                last_rc = (r, c)
+    
+                if maps.gt[r, c] == maps.map_mask["occupied"]:
+                    # 첫 OCC 히트만 기록
+                    break  # 이 ray 종료 (더 이상 진행 X)
+    
+                else:
+                    # 관측된 FREE 갱신
+                    if maps.belief[r, c] != maps.map_mask["start"]:
+                        maps.belief[r, c] = maps.map_mask["free"]
+    
+                    # 이 셀의 8-이웃 중 UNKNOWN이 있으면 'frontier 후보'
+                    found_unknown = False
+                    for dr in (-1, 0, 1):
+                        for dc in (-1, 0, 1):
+                            if dr == 0 and dc == 0:
+                                continue
+                            rr = r + dr; cc = c + dc
+                            if 0 <= rr < H and 0 <= cc < W and maps.belief[rr, cc] == maps.map_mask["unknown"]:
+                                found_unknown = True
+                                break
+                        if found_unknown:
+                            break
+    
+                    # frontier 후보는 ray를 따라 '마지막으로' 갱신하여, 경계에 가장 가까운 FREE를 선택
+                    if found_unknown:
+                        frontier_candidate_rc = (r, c)
+    
+            # ray가 끝난 뒤, 후보가 있으면 frontier를 1개만 최종 채택
+            if frontier_candidate_rc is not None:
+                r, c = frontier_candidate_rc
+                wx, wy = maps.grid_to_world(r, c)
+                dx = wx - drone_pose[0]; dy = wy - drone_pose[1]
+                cth = math.cos(-drone_pose[2]); sth = math.sin(-drone_pose[2])
+                lx = cth*dx - sth*dy; ly = sth*dx + cth*dy
+                frontier_local.append((lx, ly))
+                frontier_rc.append((r, c))
+    
+        return np.array(frontier_local), np.array(frontier_rc)
+
+
+
+
+    def update_neighbor_info(self, agent_id: int, robot_pos: np.ndarray):
+        """
+        [Decentralized] Neighbor 기준을 바탕으로 주변 이웃 에이전트 정보 업데이트
+
+            Inputs:
+                agent_id: 에이전트 고유 ID
+                robot_pos: 특정 에이전트 Pose [x, y, yaw]
+        """
+        robot_pos_i = robot_pos[agent_id]
+        other_pos = np.delete(robot_pos, agent_id, axis=0)
+        other_vel = np.delete(self.robot_velocities, agent_id, axis=0)
+        # lx, ly
+        rel_pos = world_to_local(w1=robot_pos_i[:2], w2=other_pos[:, :2], yaw=robot_pos_i[2])
+        # v_jx, v_jy
+        rel_vel = world_to_local(w1=None, w2=other_vel, yaw=robot_pos_i[2])
+        # Neighbor Ids
+        distance = np.linalg.norm(rel_pos, axis=1)
+        neighbor_ids = np.where(distance <= self.neighbor_radius)[0]
+        # Neighbor State for Agent Collision Avoidance
+        self.num_neighbors[agent_id] = len(neighbor_ids)
+        if self.num_neighbors[agent_id] > 0:
+            self.neighbor_states[agent_id, :self.num_neighbors[agent_id], :2] = rel_pos[neighbor_ids]
+            self.neighbor_states[agent_id, :self.num_neighbors[agent_id], 2:] = rel_vel[neighbor_ids]
+        else:
+            # 0개인 경우 (Connectivity Slack으로 인한 예외상황) : 가장 가까운 Agent가 neighbors
+            closest_neighbor_id = np.argmin(distance)
+            self.num_neighbors[agent_id] = 1
+            self.neighbor_states[agent_id, 0, :2] = rel_pos[closest_neighbor_id]
+            self.neighbor_states[agent_id, 0, 2:] = rel_vel[closest_neighbor_id]
+
+
+    def update_obstacle_info(self, agent_id: int, robot_pos:np.ndarray):
+        """
+        [Decentralized] Ray-casting 방식을 통해 Obstacle 정보 업데이트
+
+            Inputs:
+                agent_id: 에이전트 고유 ID
+                robot_pos: 특정 에이전트 Pose [x, y, yaw]
+        """
+        local_obstacles = sense(robot_pos, 
+                                self.map_info,
+                                self.cfg.sensor_range,
+                                self.cfg.num_rays,
+                                self.cfg.fov)
+        
+        # Store obstacle information
+        num_obs = min(len(local_obstacles), self.cfg.max_obs)
+        if num_obs > 0:
+            self.obstacle_states[agent_id, :num_obs] = local_obstacles[:num_obs]
+        else:
+            self.obstacle_states[agent_id, :] = 0
+        self.num_obstacles[agent_id] = num_obs
+
+
+    def update_cbf_infos(self):
+        """
+        [Decentralized] HOCBF Safety Filter에 필요한 정보를 각 Agent에 대해서 업데이트
         : Safety -> [장애물 정보, 이웃 에이전트 정보, 자식 에이전트 정보]
         : Nominal -> [타겟 위치]
             
             Inputs:
                 agent_id: 에이전트 고유 ID
-            
         """
-        i = agent_id
-        pos_i = self.robot_locations[i]
-        yaw_i = self.robot_angles[i]
-        pass
+        self.neighbor_states.fill(0)
+        self.obstacle_states.fill(0)  
+        on_conn_list = []
+        target_pos_list =[]
+        p_obs_list = []
+        p_agents_list = []
+        p_c_agent_list = []
+        v_c_agent_list = []
+        v_agents_list = []
+        connectivity_traj = [[] for _ in range(self.num_agent)]
+        
+        # Aegnt-wise CBF Info Update
+        robot_pos = np.hstack((self.robot_locations, self.robot_angles.reshape(-1, 1)))
+        for i in range(self.num_agent):
+            pos_i = self.robot_locations[i]
+            yaw_i = self.robot_angles[i]
+            # Obstacle Info
+            self.update_obstacle_info(agent_id=i, robot_pos=robot_pos[i])
+            num_obs = self.num_obstacles[i]
+            p_obs_list.append(self.obstacle_states[i, :num_obs])
+            # Neighbor Agent Info
+            self.update_neighbor_info(agent_id=i, robot_pos=robot_pos)
+            num_neighbors = self.num_neighbors[i]
+            p_agents_list.append(self.neighbor_states[i, :num_neighbors, :2])
+            v_agents_list.append(self.neighbor_states[i, :num_neighbors, 2:])
+            # ==== Target Agent Info ====
+            # Root Node : Parent Node 존재 X
+            # Leaf Node : CHild Node 존재 X
+            # Reciprocal Connectivity Relationship:
+            #   1. Parent Node : Child Node와 HOCBF 제약
+            #   2. Child Node : Parent Node까지 A* Optimal Path
+            #   3. Root Node : Child Node에 대해서 Only HOCBF제약
+            #   4. Leaf Node : Parents Node에 대해서 Only A* Optimal Path
+            parent_id = self.connectivity_graph.get_parent(i)
+            child_id = self.connectivity_graph.get_child(i)
+            if parent_id == -1:
+                # Root Node : Only HOCBF because No Parent
+                pos_i_op = self.robot_locations[i]
+                pos_i_c = self.robot_locations[child_id]
+                vel_i_c = self.robot_velocities[child_id]
+                if pos_i_c.shape[0] > 1:
+                    # MST는 여러개의 자식노드가 있을 수 있음 -> Closest로 지정
+                    min_ids = np.argmin(np.linalg.norm(pos_i-pos_i_c, axis=1))
+                    pos_i_cbf = pos_i_c[min_ids]
+                    vel_i_cbf = vel_i_c[min_ids]
+                else:
+                    pos_i_cbf = pos_i_c.reshape(-1)
+                    vel_i_cbf = vel_i_c.reshape(-1)
+            elif child_id is None:
+                # Leaf Node : Only A* because No child
+                pos_i_op = self.robot_locations[parent_id]
+                pos_i_c = np.array([])
+                vel_i_c = np.array([])
+            else:
+                # Other Node : Both A* and HOCBF
+                pos_i_op = self.robot_locations[parent_id]
+                pos_i_c = self.robot_locations[child_id]
+                vel_i_c = self.robot_velocities[child_id]
+                if pos_i_c.shape[0] > 1:
+                    # MST는 여러개의 자식노드가 있을 수 있음 -> Closest로 지정
+                    min_ids = np.argmin(np.linalg.norm(pos_i-pos_i_c, axis=1))
+                    pos_i_cbf = pos_i_c[min_ids]
+                    vel_i_cbf = vel_i_c[min_ids]
+                else:
+                    pos_i_cbf = pos_i_c.reshape(-1)
+                    vel_i_cbf = vel_i_c.reshape(-1)
+            
+            # Control Barrier Function Info for Backward Connectivity
+            p_p = world_to_local(w1=pos_i, w2=pos_i_op, yaw=yaw_i)
+            p_c = world_to_local(w1=pos_i, w2=pos_i_cbf, yaw=yaw_i) if child_id is not None else np.array([])
+            v_c = world_to_local(w1=None, w2=vel_i_cbf, yaw=yaw_i) if child_id is not None else np.array([]) # [NOTE] HOCBF Formulation 상 좌표계 정렬된 절대속도 필요
+
+            p_c_agent_list.append(p_c)
+            v_c_agent_list.append(v_c)
+
+            # Forward Connectivity Target Info
+            min_dist = np.linalg.norm(p_p)
+            if (min_dist < self.cfg.d_conn) or (parent_id == -1):
+                # Connectivity 유지 중인 Parent Node & Parent가 없는 Root Node
+                on_conn = False
+                start_cell = self.map_info.world_to_grid_np(pos_i) # (col, row)
+                end_cell = np.flip(self.assigned_rc[i]) # (col, row)
+            else:
+                # Connectivity가 끊길 위험이 있는 Child Node & Child가 없는 Leaf Node 
+                on_conn = True
+                start_cell = self.map_info.world_to_grid_np(pos_i) # (col, row)
+                end_cell = self.map_info.world_to_grid_np(pos_i_op) # (col, row)
+            
+            path_cells = astar_search(self.map_info,
+                                      start_pos=np.flip(start_cell),
+                                      end_pos=np.flip(end_cell),
+                                      agent_id=i) # (row, col)
+            if path_cells is not None and len(path_cells) > 0:
+                # Path 생성된 경우
+                optimal_traj = self.map_info.grid_to_world_np(np.flip(path_cells, axis=1)) # (col, row) -> (x, y)
+            else:
+                # Path 없는 경우
+                optimal_traj = np.array([self.robot_locations[i]])
+            optimal_traj_local = world_to_local(w1=pos_i, w2=optimal_traj, yaw=yaw_i)
+            distances = np.linalg.norm(optimal_traj_local, axis=1)
+            ids = np.where(distances >= 0.1)[0]
+            if len(ids) > 0:
+                target_pos = optimal_traj_local[ids[0]]
+            else:
+                target_pos = optimal_traj_local[-1]
+
+            connectivity_traj[i].append(optimal_traj)
+            target_pos_list.append(target_pos)
+            on_conn_list.append(on_conn)
+                
+        self.connectivity_traj = connectivity_traj
+
+        self.cbf_infos["safety"] = {
+            "v_current": self.robot_speeds.tolist(),
+            "p_obs": p_obs_list,
+            "p_agents": p_agents_list,
+            "v_agents": v_agents_list,
+            "p_c_agent": p_c_agent_list,
+            "v_c_agent": v_c_agent_list
+        }
+
+        self.cbf_infos["nominal"] = {
+            "p_targets" : target_pos_list,
+            "on_conn" : on_conn_list
+        }
+
+            

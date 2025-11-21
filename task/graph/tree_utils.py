@@ -3,8 +3,7 @@ import numpy as np
 def split_and_score_local_region(
     local_cell_bounds, agents_pose, map_info, 
     S_min=8, max_local=16,     
-    alpha=1.0, beta=0.2, gamma=0.1, goal_w=10.0
-):
+    alpha=1.0, beta=0.2, gamma=0.1, goal_w=10.0):
     """
     하나의 '유효 영역'을 받아, 
     더 세밀하게 분할(Local KD-Tree)하여

@@ -7,8 +7,11 @@ from cvxpylayers.torch import CvxpyLayer
 import torch.nn as nn
 import cvxpy as cp
 
+import warnings
+warnings.filterwarnings("ignore", message="Converting G to a CSC matrix; may take a while.")
+
 def get_nominal_input(p_target: list[np.ndarray] | np.ndarray,
-                      on_search: list[bool] | np.ndarray,
+                      on_conn: list[bool] | np.ndarray,
                       v_current: list[float] | np.ndarray,
                       a_max: float,
                       w_max: float,
@@ -21,23 +24,20 @@ def get_nominal_input(p_target: list[np.ndarray] | np.ndarray,
             p_target = np.vstack(p_target) # (n, 2)
         if isinstance(v_current, list):
             v_current = np.array(v_current).reshape(-1, 1) # (n, 1)
-        if isinstance(on_search, list):
-            on_search = np.array(on_search)
-            k_v_arr = np.where(on_search, k_v*1.5, k_v)
-            k_w_arr = np.where(on_search, k_w*1.5, k_w)
+        if isinstance(on_conn, list):
+            on_conn = np.array(on_conn)
+            k_v_arr = np.where(on_conn, k_v*1.5, k_v)
+            k_w_arr = np.where(on_conn, k_w*1.5, k_w)
 
-        lx, ly = p_target[:, 0], p_target[:, 1]
-            
+        lx, ly = p_target[:, 0], p_target[:, 1]  
         dist_to_target = np.sqrt(lx**2 + ly**2)
         angle_to_target = np.arctan2(ly, lx)
 
         # Target velocity based on distance
         v_target = np.clip(k_v_arr * dist_to_target, 0.0, v_max).reshape(-1, 1)
-        
         # P-control for acceleration
         a_ref = k_v * (v_target - v_current)
         a_ref = np.clip(a_ref, -a_max, a_max)
-
         # P-control for angular velocity
         w_ref = np.clip(k_w_arr * angle_to_target, -w_max, w_max).reshape(-1, 1)
 
@@ -278,12 +278,12 @@ class DifferentiableHOCBFLayer(nn.Module):
         """
         with torch.no_grad():
             u_nominal = get_nominal_input(p_target=nominal["p_targets"],
-                                        on_search=nominal["on_search"],
-                                        v_current=nominal["v_current"],
-                                        a_max=self.a_max,
-                                        w_max=self.w_max,
-                                        v_max=self.v_max,
-                                        device=self.device)
+                                          on_conn=nominal["on_conn"],
+                                          v_current=state["v_current"],
+                                          a_max=self.a_max,
+                                          w_max=self.w_max,
+                                          v_max=self.v_max,
+                                          device=self.device)
             # Handle training-time batch (List of Dictionaries)
             if isinstance(state, list):
                 # Reshape u_nominal from (B_train, N_agents, 2) to (B_train * N_agents, 2)
@@ -311,7 +311,7 @@ class DifferentiableHOCBFLayer(nn.Module):
             p_obs_padded = torch.zeros(B, self.max_obs, 2, device=device, dtype=dtype)
             p_agents_padded = torch.zeros(B, self.max_neighbors, 2, device=device, dtype=dtype)
             p_closest_agent = torch.zeros(B, 1, 2, device=device, dtype=dtype)
-            v_agents_local_padded = torch.zeros(B, self.max_neighbors, 2, device=device, dtype=dtype)
+            v_agents_padded = torch.zeros(B, self.max_neighbors, 2, device=device, dtype=dtype)
             v_closest_agent = torch.zeros(B, 1, 2, device=device, dtype=dtype)
             
             # Initialize masks
@@ -332,7 +332,7 @@ class DifferentiableHOCBFLayer(nn.Module):
                 if len(p_agents_list) > 0:
                     num_neighbors = min(len(p_agents_list), self.max_neighbors)
                     p_agents_padded[i, :num_neighbors] = torch.tensor(p_agents_list[:num_neighbors], device=device, dtype=dtype)
-                    v_agents_local_padded[i, :num_neighbors] = torch.tensor(v_agents_list[:num_neighbors], device=device, dtype=dtype)
+                    v_agents_padded[i, :num_neighbors] = torch.tensor(v_agents_list[:num_neighbors], device=device, dtype=dtype)
                     agents_mask[i, :num_neighbors] = 1.0
                 # Connectivity Agent
                 p_closest_agent_list = state['p_c_agent'][i]
@@ -378,7 +378,7 @@ class DifferentiableHOCBFLayer(nn.Module):
 
             # # --- 동적 에이전트 제약 ---
             lx_ag, ly_ag = p_agents_padded[..., 0], p_agents_padded[..., 1]
-            v_jx, v_jy = v_agents_local_padded[..., 0], v_agents_local_padded[..., 1]
+            v_jx, v_jy = v_agents_padded[..., 0], v_agents_padded[..., 1]
             
             # Collision Avoidance (max_agents)
             h_avoid = lx_ag**2 + ly_ag**2 - self.d_safe**2

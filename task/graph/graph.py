@@ -5,8 +5,8 @@ from collections import deque
 
 class ConnectivityGraph:
     """
-        여러 에이전트의 위치를 기반으로 최소 스패닝 트리(MST)를 계산하고,
-        각 에이전트의 연결성 유지 대상('부모' 노드)을 관리하는 클래스.
+    여러 에이전트의 위치를 기반으로 최소 스패닝 트리(MST)를 계산하고,
+    각 에이전트의 연결성 유지 대상('부모' 노드)을 관리하는 클래스.
     """
     def __init__(self, num_agents: int):
         """
@@ -21,10 +21,10 @@ class ConnectivityGraph:
 
     def update_and_compute_mst(self, agent_positions: np.ndarray, root_agent_id: int = 0):
         """
-            에이전트 위치를 업데이트하고, MST를 다시 계산하여 부모-자식 관계를 설정
-            Inputs:
-                agent_positions: 에이전트들의 현재 위치 배열. shape: (num_agents, 2)
-                root_agent_id: 트리의 루트로 지정할 에이전트의 ID
+        에이전트 위치를 업데이트하고, MST를 다시 계산하여 부모-자식 관계를 설정
+        Inputs:
+            agent_positions: 에이전트들의 현재 위치 배열. shape: (num_agents, 2)
+            root_agent_id: 트리의 루트로 지정할 에이전트의 ID
         """
         if agent_positions.shape[0] != self.num_agents:
             raise ValueError(f"입력된 위치의 수({agent_positions.shape[0]})가 "
