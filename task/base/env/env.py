@@ -184,27 +184,7 @@ class Env():
 
         return self.obs_buf, self.state_buf, self.infos
 
-    def _set_init_state(self) -> Tuple[np.ndarray, np.ndarray]:
-        map_info = self.map_info
-        H = map_info.H
-        start_cells = np.column_stack((np.nonzero(map_info.gt == map_info.map_mask["start"])[0], 
-                                       np.nonzero(map_info.gt == map_info.map_mask["start"])[1]))
-        idx = np.random.choice(len(start_cells), self.num_agent, replace=False)
-        chosen = start_cells[idx]
-        rows, cols = chosen[:, 0], chosen[:, 1]
 
-        world_x, world_y = map_info.grid_to_world(rows, cols)
-
-        return world_x, world_y
-
-    def update_robot_belief(self, robot_cell, heading) -> None:
-        self.map_info.belief = sensor_work_heading(robot_cell, 
-                                                   round(self.sensor_range / self.map_info.res_m), 
-                                                   self.map_info.belief,
-                                                   self.map_info.gt, 
-                                                   heading, 
-                                                   self.fov, 
-                                                   self.map_info.map_mask)
 
 
     def step(self, actions) -> Tuple[np.ndarray,
@@ -215,7 +195,7 @@ class Env():
                                      np.ndarray,
                                      dict[str, np.ndarray]]:
         """
-
+        액션에 따른 시뮬레이션 환경의 한 스텝 진행
             Inputs:
                 [n, 0] : linear acceleration command of n'th agent
                 [n, 1] : angular velocity command of n'th agent
@@ -230,18 +210,18 @@ class Env():
                 info -> dict[str, [n, dim]]     : additional metric 
 
         """
-        
         # RL Action 전처리 단계
         self._pre_apply_action(actions)
 
         for i in range(self.cfg.decimation):
+            # action을 적용하여 robot state 업데이트
+            self._apply_actions()
+            
+            # Belief 업데이트
             for j in range(self.num_agent):
                 # 이미 도달한 에이전트는 상태 업데이트 X
                 if self.reached_goal[j]:
                     continue
-                # action을 적용하여 robot state (위치 및 각도) 업데이트
-                self._apply_action(j)
-                # Belief 업데이트
                 cell = self.map_info.world_to_grid_np(self.robot_locations[j])
                 self.update_robot_belief(cell, np.rad2deg(self.robot_angles[j]))
 
@@ -263,6 +243,32 @@ class Env():
         return self.obs_buf, self.state_buf, self.reward_buf, self.termination_buf, self.truncation_buf, self.infos
 
 
+    # ================== Auxilary Functions =====================
+
+    def _set_init_state(self) -> Tuple[np.ndarray, np.ndarray]:
+        map_info = self.map_info
+        H = map_info.H
+        start_cells = np.column_stack((np.nonzero(map_info.gt == map_info.map_mask["start"])[0], 
+                                       np.nonzero(map_info.gt == map_info.map_mask["start"])[1]))
+        idx = np.random.choice(len(start_cells), self.num_agent, replace=False)
+        chosen = start_cells[idx]
+        rows, cols = chosen[:, 0], chosen[:, 1]
+
+        world_x, world_y = map_info.grid_to_world(rows, cols)
+
+        return world_x, world_y
+
+
+    def update_robot_belief(self, robot_cell, heading) -> None:
+        self.map_info.belief = sensor_work_heading(robot_cell, 
+                                                   round(self.sensor_range / self.map_info.res_m), 
+                                                   self.map_info.belief,
+                                                   self.map_info.gt, 
+                                                   heading, 
+                                                   self.fov, 
+                                                   self.map_info.map_mask)
+        
+    
     # =============== Env-Specific Abstract Methods =================
     
     @abstractmethod
@@ -270,8 +276,8 @@ class Env():
         raise NotImplementedError(f"Please implement the '_pre_apply_action' method for {self.__class__.__name__}.") 
 
     @abstractmethod
-    def _apply_action(self, agent_id: int) -> np.ndarray:
-        raise NotImplementedError(f"Please implement the '_apply_action' method for {self.__class__.__name__}.") 
+    def _apply_actions(self) -> np.ndarray:
+        raise NotImplementedError(f"Please implement the '_apply_actions' method for {self.__class__.__name__}.") 
     
 
     @abstractmethod

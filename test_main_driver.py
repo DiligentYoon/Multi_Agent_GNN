@@ -63,8 +63,8 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results'):
     # Data tracking for plots
     nominal_inputs_history = [[] for _ in range(num_agents)]
     safe_inputs_history    = [[] for _ in range(num_agents)]
-    path_history  = [[] for _ in range(num_agents)]
     min_obs_state = [[] for _ in range(num_agents)]
+    path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
     connectivity_pairs = []
     demo = False

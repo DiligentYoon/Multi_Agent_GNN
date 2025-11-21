@@ -234,13 +234,8 @@ class DifferentiableHOCBFLayer(nn.Module):
 
         # Objective Info
         self.w_slack = cfg['w_slack']
-
         self.dtype = torch.double 
-        # self.device = torch.device('cpu')
         self.device = device
-
-        # Action Scaler
-        self.action_scale = torch.tensor([self.a_max, self.w_max], device=self.device)
 
         # --- 1. 최적화 변수 정의 ---
         u = cp.Variable(self.num_input, name='u')
