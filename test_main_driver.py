@@ -29,11 +29,20 @@ def create_models(cfg: dict, obs_dim: int, state_dim: int, action_dim: int, devi
 
     return
 
-def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results'):
+def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True):
     """
     Runs a simulation test for the CBFEnv and SACAgent, generating a GIF and plots.
+        Inputs:
+            cfg: Total Configuration
+            stpes: maximum simulation steps
+            out_dir: visualization save directory
+            visualize : If True, generates and saves a GIF and plots. 
+                        If False, runs the simulation without visualization.
     """
     print("=== Starting Simulation Test ===")
+    if not visualize:
+        print("Visualization is OFF.")
+        
     # --- Output Directory ---
     os.makedirs(out_dir, exist_ok=True)
     print(f"Results will be saved to: {out_dir}")
@@ -43,109 +52,105 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results'):
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'])
     print("Environment created and reset.")
     # --- Agent & Models ---
-    obs_dim = env.cfg.num_obs
-    state_dim = env.cfg.num_state
-    action_dim = env.cfg.num_act
     num_agents = cfg['env']['num_agent']
 
-    # models = create_models(cfg, obs_dim, state_dim, action_dim, device)
-    # agent = SACAgent(num_agents=num_agents, models=models, device=device, cfg=cfg['agent'])
-    # print("Agent with models created.")
-
-    # checkpoint_path = os.path.join(PATH, SPECIFIC_PATH)
-    # agent.load(checkpoint_path)
-    # print(f"Load Checkpoint at {checkpoint_path}")
-
-    # --- Simulation Loop ---
+    # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+    fig, ax1, ax2 = None, None, None
+    if visualize:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
 
-    # Data tracking for plots
-    nominal_inputs_history = [[] for _ in range(num_agents)]
-    safe_inputs_history    = [[] for _ in range(num_agents)]
-    min_obs_state = [[] for _ in range(num_agents)]
     path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
-    connectivity_pairs = []
-    demo = False
     
     obs, state, info = env.reset(episode_index=10)
     actions = None
-    for step_num in range(steps):
-        next_obs, next_state, reward, terminated, truncated, next_info = env.step(actions)
-        done = np.any(terminated) or np.any(truncated)
-
-        # --- Record data ---
+    
+    # --- Callback for rendering each physics step ---
+    def render_callback(env_instance: NavEnv):
+        # This function is only called if visualize is True.
         for j in range(num_agents):
-            # Obstacle
-            obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
-            if env.num_obstacles[j] == 0:
-                min_obs_state[j].append(np.array([0.3, 0.3]))
+            path_history[j].append((env_instance.robot_locations[j, 0], env_instance.robot_locations[j, 1]))
 
-                min_dist = env.cfg.sensor_range**2
+        # Create a list of agent pairs for connectivity visualization
+        connectivity_pairs = []
+        for i in range(env_instance.num_agent):
+            pos1 = env_instance.robot_locations[i]
+            if not env_instance.root_mask[i]:
+                parent_id = env_instance.connectivity_graph.get_parent(i)
+                pos2 = env_instance.robot_locations[parent_id]
             else:
-                dist = np.linalg.norm(obs_state, axis=1)
-                min_ids = np.argmin(dist)
-                min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
-                min_obs_state[j].append(obs_state[min_ids].copy())
-            
-            # Connetctivity
-            p_c = env.cbf_infos["safety"]["p_c_agent"][j].reshape(-1)
-            if len(p_c) > 0:
-                min_agent_dist = p_c[0]**2 + p_c[1]**2
-            else:
-                min_agent_dist = 0
-            agent_cbf_info = {"obs_avoid": min_dist-env.cfg.d_safe**2,
-                              "agent_conn": env.neighbor_radius**2 - min_agent_dist}
+                pos2 = pos1
+            connectivity_pairs.append((pos1, pos2))
 
-            # Create a list of agent pairs for connectivity visualization
-            connectivity_pairs = []
-            for i in range(env.num_agent):
-                pos1 = env.robot_locations[i]
-                if not env.root_mask[i]:
-                    parent_id = env.connectivity_graph.get_parent(i)
-                    pos2 = env.robot_locations[parent_id]
-                else:
-                    pos2 = pos1
-                connectivity_pairs.append((pos1, pos2))
-
-            # List Data
-            path_history[j].append((env.robot_locations[j, 0], env.robot_locations[j, 1]))
-            cbf_history[j].append(agent_cbf_info)
-
-        # --- Visualization ---    
         # Create a dictionary with visualization data
         viz_data = {
             "paths": path_history,
-            "obs_local": env.obstacle_states,
-            "connectivity_pairs": connectivity_pairs, # Add pairs to viz_data
-            "target_local": env.cbf_infos["nominal"]["p_targets"],
-            "connectivity_trajs": env.connectivity_traj,
+            "obs_local": env_instance.obstacle_states,
+            "connectivity_pairs": connectivity_pairs,
+            "target_local": env_instance.cbf_infos["nominal"]["p_targets"],
+            "connectivity_trajs": env_instance.connectivity_traj,
         }
 
-        # Call the new draw_frame function
-        draw_frame(ax1, ax2, env, viz_data)
+        # Call the draw_frame function
+        draw_frame(ax1, ax2, env_instance, viz_data)
         
         fig.canvas.draw()
         buf = fig.canvas.buffer_rgba()
         frame = np.asarray(buf, dtype=np.uint8)[..., :3]
         frames.append(frame.copy())
 
-        print(f"Step : {step_num} | Physics Step : {step_num*env.decimation}")
+    # Determine which callback to use
+    callback_fn = render_callback if visualize else None
+
+    for step_num in range(steps):
+        # Pass the callback to the step function
+        next_obs, next_state, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
+        
+        # --- Record data for final plots (once per RL step) ---
+        if visualize:
+            for j in range(num_agents):
+                # Obstacle distance for CBF plot
+                obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
+                if env.num_obstacles[j] == 0:
+                    min_dist = env.cfg.sensor_range**2
+                else:
+                    dist = np.linalg.norm(obs_state, axis=1)
+                    min_ids = np.argmin(dist)
+                    min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
+                
+                # Connectivity distance for CBF plot
+                p_c = env.cbf_infos["safety"]["p_c_agent"][j].reshape(-1)
+                if len(p_c) > 0:
+                    min_agent_dist = p_c[0]**2 + p_c[1]**2
+                else:
+                    min_agent_dist = 0
+                
+                agent_cbf_info = {"obs_avoid": min_dist - env.cfg.d_safe**2,
+                                  "agent_conn": env.neighbor_radius**2 - min_agent_dist}
+                cbf_history[j].append(agent_cbf_info)
+
+        print(f"RL Step: {step_num+1}/{steps}")
 
         obs = next_obs
         state = next_state
         info = next_info
-    
+        
+        if np.any(terminated) or np.any(truncated):
+            print("Episode finished.")
+            break
 
-    plt.close(fig)
-    # --- Save GIF ---
-    gif_path = os.path.join(out_dir, 'simulation_test.gif')
-    print(f"Saving GIF to {gif_path}...")
-    imageio.mimsave(gif_path, frames, fps=5)
-    print("GIF saved.")
-    # # --- Generate and Save Plots ---
-    plot_cbf_values(cbf_history, env.dt, num_agents, save_path=os.path.join(out_dir, 'cbf_values.png'))
+    if visualize:
+        plt.close(fig)
+        # --- Save GIF ---
+        gif_path = os.path.join(out_dir, 'simulation_test.gif')
+        print(f"Saving GIF to {gif_path}...")
+        imageio.mimsave(gif_path, frames, fps=20)
+        print("GIF saved.")
+        
+        # --- Generate and Save Plots ---
+        plot_cbf_values(cbf_history, env.dt * env.decimation, num_agents, save_path=os.path.join(out_dir, 'cbf_values.png'))
+    
     print("=== Simulation Test Finished ===")
 
 
@@ -158,5 +163,5 @@ if __name__ == '__main__':
     torch.manual_seed(config['env']['seed'])
     np.random.seed(config['env']['seed'])
     
-    # Run the test
-    run_simulation_test(config, steps=50)
+    # Run the test with visualization enabled
+    run_simulation_test(config, steps=50, visualize=True)

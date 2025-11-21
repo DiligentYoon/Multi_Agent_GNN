@@ -215,7 +215,7 @@ class NavEnv(Env):
 
         # Robot Graph Construction
 
-        # TODO: This part is deleted later. Only for test
+        # ====================== TODO: This part is deleted later. Only for test =======================
         total_local_regions = []
         total_local_scores = []
         frontier_cells = [[] for _ in range(self.num_agent)]
@@ -237,7 +237,6 @@ class NavEnv(Env):
             frontier_cells[i].append(frontiers_cell)
         bel[bel == self.map_info.map_mask["frontier"]] = self.map_info.map_mask["free"]
 
-        # ==================== 임시 할당 코드 ==========================
         root_id = np.argmax(self.num_frontiers)
         self.root_mask.fill(0)
         self.root_mask[root_id] = 1
@@ -269,6 +268,8 @@ class NavEnv(Env):
         self.regions = regions
         self.valid_regions = valid_regions
         self.assigned_rc = np.array(assigned_rc)
+
+        # =================================================================================================
 
 
     def _update_infos(self):

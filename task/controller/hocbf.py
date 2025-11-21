@@ -212,7 +212,6 @@ class DifferentiableHOCBFLayer(nn.Module):
 
         self.num_vars = self.num_input + self.num_slack
         self.num_hocbf_constraints = self.max_obs + self.max_agents + 1 # obs + agent-collision + connectivity
-        self.num_box_constraints = 4
         self.num_constraints = self.num_hocbf_constraints + self.num_slack
 
         # Constraints Info
@@ -348,7 +347,7 @@ class DifferentiableHOCBFLayer(nn.Module):
             # --- 제약 조건 행렬 G, h 계산 ---
             # 제약 조건 담을 때, 감지된 obs와 agent수 만큼만 유효하도록 마스킹 해야 함.
             G = torch.zeros(B, m, n, device=device, dtype=dtype)
-            h = torch.full((B, m), 1e3, device=device, dtype=dtype)
+            h = torch.full((B, m), 1, device=device, dtype=dtype)
 
             current_idx = 0
             # Box Constraints
@@ -373,7 +372,7 @@ class DifferentiableHOCBFLayer(nn.Module):
             G[:, current_idx:current_idx+self.max_obs, 1] = G_obs_w
             G[:, current_idx:current_idx+self.max_obs, 2] = G_obs_delta                     
             h[:, current_idx:current_idx+self.max_obs] = h_rhs_obs
-            h[:, current_idx:current_idx+self.max_obs][obs_mask == 0] = 1e3
+            h[:, current_idx:current_idx+self.max_obs][obs_mask == 0] = 1
             current_idx += self.max_obs
 
             # # --- 동적 에이전트 제약 ---
@@ -394,7 +393,7 @@ class DifferentiableHOCBFLayer(nn.Module):
             G[:, current_idx:current_idx+self.max_neighbors, 1] = G_avoid_w
             G[:, current_idx:current_idx+self.max_neighbors, 3] = G_avoid_delta
             h[:, current_idx:current_idx+self.max_neighbors] = h_rhs_avoid
-            h[:, current_idx:current_idx+self.max_neighbors][agents_mask == 0] = 1e3
+            h[:, current_idx:current_idx+self.max_neighbors][agents_mask == 0] = 1
             current_idx += self.max_neighbors
 
             # Connectivity (1)
@@ -413,8 +412,7 @@ class DifferentiableHOCBFLayer(nn.Module):
             G[:, current_idx, 1] = G_conn_w.squeeze(-1)
             G[:, current_idx, 4] = G_conn_delta.squeeze(-1)
             h[:, current_idx] = h_rhs_conn.squeeze(-1)
-            h[:, current_idx][(closest_mask == 0).squeeze()] = 1e3
-            # h[:, current_idx] = 1e3
+            h[:, current_idx][(closest_mask == 0).squeeze()] = 1
 
             if device == torch.device('cpu'):
                 u_ref_ = (u_nominal.to(device=device, dtype=dtype)).cpu().contiguous()

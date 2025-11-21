@@ -37,8 +37,8 @@ env:
     a_max: 0
     w_max: 0
     v_max: 0
-    gamma_c1: 2.0
-    gamma_c2: 2.0
+    gamma_c1: 2.5
+    gamma_c2: 2.5
     gamma_a1: 1.5
     gamma_a2: 1.5
     gamma_conn1: 1.5

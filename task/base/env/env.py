@@ -2,7 +2,7 @@ import os
 import numpy as np
 from PIL import Image
 from abc import abstractmethod
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Callable
 
 from .env_cfg import EnvCfg
 from task.utils import *
@@ -187,7 +187,7 @@ class Env():
 
 
 
-    def step(self, actions) -> Tuple[np.ndarray,
+    def step(self, actions, on_physics_step: Optional[Callable[['Env'], None]] = None) -> Tuple[np.ndarray,
                                      np.ndarray,
                                      np.ndarray,
                                      np.ndarray,
@@ -223,6 +223,9 @@ class Env():
                     continue
                 cell = self.map_info.world_to_grid_np(self.robot_locations[j])
                 self.update_robot_belief(cell, np.rad2deg(self.robot_angles[j]))
+
+            if on_physics_step:
+                on_physics_step(self)
 
         # Done 신호 생성
         self.num_step += 1
@@ -300,7 +303,7 @@ class Env():
 
 
     @abstractmethod
-    def _get_rewards(self) -> np.ndarray:
+    def get_rewards(self) -> np.ndarray:
         raise NotImplementedError(f"Please implement the '_get_rewards' method for {self.__class__.__name__}.")
     
     @abstractmethod
