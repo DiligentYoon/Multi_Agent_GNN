@@ -107,22 +107,22 @@ class NavEnv(Env):
         control_inputs, feasible = self.controller(self.cbf_infos["nominal"], self.cbf_infos["safety"])
         active_mask = ~self.reached_goal.squeeze()
 
-        # 1. 속도 업데이트 (선속도)
+        # 속도 업데이트 (선속도)
         speeds = self.robot_speeds[active_mask] + control_inputs[active_mask, 0] * self.dt
         self.robot_speeds[active_mask] = np.clip(speeds, 0.0, self.max_lin_vel)
         
-        # 2. 위치 업데이트
+        # 위치 업데이트
         current_angles = self.robot_angles[active_mask]
         self.robot_locations[active_mask, 0] += self.robot_speeds[active_mask] * np.cos(current_angles) * self.dt
         self.robot_locations[active_mask, 1] += self.robot_speeds[active_mask] * np.sin(current_angles) * self.dt
         
-        # 3. 각도 업데이트
+        # 각도 업데이트
         yaw_rates = np.clip(control_inputs[active_mask, 1], -self.max_ang_vel, self.max_ang_vel)
         new_angles = ((current_angles + yaw_rates * self.dt + np.pi) % (2 * np.pi)) - np.pi
         self.robot_yaw_rate[active_mask] = yaw_rates
         self.robot_angles[active_mask] = new_angles
         
-        # 4. World Frame 속도 벡터 업데이트
+        # World Frame 속도 벡터 업데이트
         self.robot_velocities[active_mask, 0] = self.robot_speeds[active_mask] * np.cos(new_angles)
         self.robot_velocities[active_mask, 1] = self.robot_speeds[active_mask] * np.sin(new_angles)
     
