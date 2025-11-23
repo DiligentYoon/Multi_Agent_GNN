@@ -3,8 +3,8 @@ import numpy as np
 import torch
 import math
 
-
-import time
+import skfmm
+from random import shuffle
 from typing import Any
 from sklearn.cluster import DBSCAN
 from scipy.optimize import linear_sum_assignment
@@ -408,7 +408,6 @@ def global_frontier_marking(map_info):
     Global Belief Map에 Frontier Marking
     TODO: 추후, Incremental Marking 방법 고려 (이전 스텝 검사 -> 이번 스텝 마킹)
     """
-    t1 = time.time()
     map = map_info
     belief = map.belief
     H, W = belief.shape
@@ -471,9 +470,8 @@ def global_frontier_marking(map_info):
     #     # 상태 업데이트
     #     frontier_belief[r_rm, c_rm] = belief[r_rm, c_rm]
     #     frontier_belief[r_new, c_new] = FRONTIER
-    t2 = time.time()
 
-    return frontier_belief, t2-t1
+    return frontier_belief
 
 
 def local_region_clustering(regions, scores, eps=0.1, min_samples=3):
@@ -624,3 +622,118 @@ def assign_targets_hungarian(maps, robot_pos, targets_rc, num_agent):
     assigned = [targets_rc[col[i]] for i in range(N)]
 
     return assigned
+
+
+def kmeans(map_info, k):
+    """
+    Calculates k-means clustering with the Intersection over Union (IoU) metric.
+        
+        Inputs:
+            map_info: Map Info for belief & frontier map
+            k: number of clusters
+
+        Returns: 
+            numpy array of shape (k, 2)
+    """
+    # geodesic distance
+    maps = map_info
+    map_mask = maps.map_mask
+    belief = maps.belief
+    belief_frontier = maps.belief_frontier
+
+    is_obs = belief == map_mask["occupied"]
+    is_frontier = belief_frontier == map_mask["frontier"]
+    frontier_idx = np.where(is_frontier)
+    rows = frontier_idx[0].shape[0]
+    if rows == 0:
+        return None, None, None, None
+    if rows < k:
+        k = rows
+
+    distances = np.empty((rows, k))
+    last_clusters = np.zeros((rows,))
+
+    cluster_idx = np.arange(rows)
+    shuffle(cluster_idx)
+    # K-means Algorihm 정의대로 K개의 Cluster 랜덤 생성
+    cluster_idx = cluster_idx[:k] 
+
+    for count in range(5):
+
+        for k_i, ci in enumerate(cluster_idx):
+            # Frontier Cluster의 중심점
+            cx, cy = frontier_idx[0][ci], frontier_idx[1][ci]
+
+            # Geodesic Distance를 계산: 각 Frontier Cluster에서 모든 Frontier들 까지의 거리 계산
+            np_obstacle_map_frontierK = np.ma.masked_values(is_obs, 1)
+            np_obstacle_map_frontierK[cx, cy] = 1
+            np_obstacle_map_distance = skfmm.distance(1 - np_obstacle_map_frontierK)
+            distances[:, k_i] = np_obstacle_map_distance[frontier_idx[0], frontier_idx[1]] # (N_f, k)
+
+            # distances[:, k_i] = (frontier_idx[0] - cx)**2 + (frontier_idx[1] - cy)**2
+            
+        # 각 frontier 점들이 어느 cluster에 속하는지 Assignment & Clustering
+        nearest_clusters = np.argmin(distances, axis=1)
+
+        if (last_clusters == nearest_clusters).all():
+            break
+
+        for k_i in range(k):
+            # Cluster k에 속하는 모든 frontier들의 ids
+            nearest_clusters_k_i_idx = np.where(nearest_clusters == k_i)
+            if not nearest_clusters_k_i_idx:
+                continue
+            
+            nearest_clusters_k_i_idx = nearest_clusters_k_i_idx[0]
+
+            if frontier_idx[0][nearest_clusters_k_i_idx].size == 0 or frontier_idx[1][nearest_clusters_k_i_idx].size == 0:
+                continue
+            
+            # 새로운 Cluster 중심점(Assinged Frontier의 평균)에 대한 거리 계산
+            np_obstacle_map_frontierK = np.ma.masked_values(is_obs, 1)
+            np_obstacle_map_frontierK[int(frontier_idx[0][nearest_clusters_k_i_idx].mean()), int(frontier_idx[1][nearest_clusters_k_i_idx].mean())] = 1
+            np_obstacle_map_distance = skfmm.distance(1 - np_obstacle_map_frontierK)
+
+            # cx = int(frontier_idx[0][nearest_clusters_k_i_idx].mean())
+            # cy = int(frontier_idx[1][nearest_clusters_k_i_idx].mean())
+
+            # np_obstacle_map_distance = distance_map(np_obstacle_map.shape, cx, cy)
+            
+            # k에 속하는 점들과 새로운 Cluster 중심점 사이의 거리
+            temp_distance_k_i = np_obstacle_map_distance[is_frontier][nearest_clusters_k_i_idx]
+            # k에 속하는 점들 중, 새로운 Clsuter 중심점과 거리가 가장 가까운 점으로 새로운 Cluster 중심점 할당 -> Cluster 중심점은 항상 Frontier Points들 중 하나를 보장
+            cluster_idx[k_i] = nearest_clusters_k_i_idx[np.argmin(temp_distance_k_i)]
+
+        last_clusters = nearest_clusters
+
+    return (frontier_idx[0][cluster_idx], frontier_idx[1][cluster_idx])
+
+
+def distance_field(input, DT_target, optimized=()):
+    DT_target = DT_target.bool()
+    
+    if optimized:
+        rows, cols = optimized
+        ex1 = np.argmax(rows) - 2
+        ex2 = len(rows) - np.argmax(np.flip(rows)) + 2
+        ey1 = np.argmax(cols) - 2
+        ey2 = len(cols) - np.argmax(np.flip(cols)) + 2
+
+        ex1 = max(0, ex1)
+        ex2 = min(DT_target.size(0), ex2)
+        ey1 = max(0, ey1)
+        ey2 = min(DT_target.size(1), ey2)
+        
+        DT_target = DT_target[ex1:ex2, ey1:ey2]
+        goal_mask = input[ex1:ex2, ey1:ey2] > 0
+        input.fill_(4)
+        input = input[ex1:ex2, ey1:ey2]
+    else:
+        goal_mask = input > 0
+
+
+    traversible = (~DT_target).numpy()
+    traversible_ma = np.ma.masked_values(traversible, 0)
+    traversible_ma[goal_mask] = 0
+    df = skfmm.distance(traversible_ma, dx=0.02)
+    input.copy_(torch.from_numpy(np.ma.filled(df, 4)))

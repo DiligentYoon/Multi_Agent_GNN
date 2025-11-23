@@ -5,10 +5,10 @@ from typing import Tuple, List
 from task.base.env.env import Env
 from task.controller.hocbf import DifferentiableHOCBFLayer
 from task.graph.graph import ConnectivityGraph
+from task.graph.kdtree import RegionKDTree
+from task.model.observation_manager import ObservationManager
 from task.planner.astar import *
 from task.utils import *
-
-from task.graph.kdtree import RegionKDTree
 from task.graph.tree_utils import *
 
 
@@ -39,6 +39,16 @@ class NavEnv(Env):
         self.controller = DifferentiableHOCBFLayer(cfg=self.cfg.controller, device=self.device)
 
         # Planning State
+        obs_cfg = {
+            "num_robots": self.num_agent,
+            "unit_size_m": self.map_info.res_m,
+            "global_map_w": self.map_info.W,
+            "global_map_h": self.map_info.H,
+            "local_map_w": self.map_info.W // self.cfg.downsampling_rate,
+            "local_map_h": self.map_info.H // self.cfg.downsampling_rate,
+            "pooling_downsampling": self.cfg.pooling_downsampling_rate
+        }
+        self.obs_manager = ObservationManager(cfg=obs_cfg, device=self.device)
         self.global_kd_tree = RegionKDTree((0, self.map_info.H, 0, self.map_info.W), valid_threshold=0.05)
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         self.local_frontiers = np.zeros((self.num_agent, self.cfg.num_rays, 2), dtype=np.float32)
@@ -67,7 +77,6 @@ class NavEnv(Env):
     
         # TODO: deleted later
         self.num_frontiers = np.zeros(self.num_agent, dtype=np.int_)
-        self.total_dt = 0
 
 
     def reset(self, episode_index: int = None):
@@ -82,6 +91,7 @@ class NavEnv(Env):
                 state : state vector
                 info : additional information
         """
+        self.history_action_map = np.zeros((self.map_info.H // self.cfg.pooling_downsampling_rate, self.map_info.W // self.cfg.pooling_downsampling_rate))
         self.connectivity_traj = [[] for _ in range(self.num_agent)]
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         
@@ -94,7 +104,7 @@ class NavEnv(Env):
         return obs, state, info
     
     
-    def _pre_apply_action(self, actions):
+    def _pre_apply_action(self, actions: torch.Tensor):
         """
         [Centralized] 제어 입력을 계산하기 위한 전처리 작업 수행
         1. Target Point action을 받아서 각 에이전트에게 할당
@@ -103,7 +113,7 @@ class NavEnv(Env):
             Inputs:
                 actions : 에이전트 별 Target Point
         """
-        pass
+        self.actions = actions
 
 
     def _apply_actions(self):
@@ -138,12 +148,16 @@ class NavEnv(Env):
 
     def _get_observations(self) -> np.ndarray | list[dict]:
         """
+        이번 스텝에 출력되었던 Action을 기반으로 History Action Map을 누적 업데이트하고,
+        Observation Manager로부터 관측 벡터 Setting
         """
-        return None
+        observation = self.obs_manager.get_global_input(torch.tensor(self.history_action_map, dtype=torch.float32, device=self.device))
+        return observation
     
 
     def _get_states(self) -> np.ndarray | list[dict]:
         """
+        Env 설정 상, State와 Observation은 동일 (Symmetric Actor-Critic)
         """
         return copy.deepcopy(self.obs_buf)
     
@@ -215,16 +229,16 @@ class NavEnv(Env):
     def _compute_intermediate_values(self):
         """
         [Centralized] 업데이트된 state값들을 바탕으로, Planning state 계산
-        : Frontier Graph
-        : Robot Graph
         """
         # Global Frontier Marking
-        self.map_info.belief_frontier, dt = global_frontier_marking(self.map_info)
-        self.total_dt += dt
-        
-        # Frontier Graph Construction
+        self.map_info.belief_frontier = global_frontier_marking(self.map_info)
 
-        # Robot Graph Construction
+        # Data Setting & Manager Update [obs, frontier, robot_pos, explored, explorable, history_pos, history_goal]
+        binary_obstacle = np.astype(self.map_info.belief == self.map_info.map_mask["occupied"], np.long)
+        binary_frontier = np.astype(self.map_info.belief_frontier == self.map_info.map_mask["frontier"], np.long)
+        binary_explored = np.astype(~(self.map_info.belief == self.map_info.map_mask["unknown"]), np.long)
+        binary_explorable = np.abs(binary_explored - 1)
+        self.obs_manager.update_global(self.robot_locations, binary_obstacle, binary_frontier, binary_explored, binary_explorable)
 
         # ====================== TODO: This part is deleted later. Only for test =======================
         total_local_regions = []

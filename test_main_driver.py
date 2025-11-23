@@ -150,8 +150,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
         
         # --- Generate and Save Plots ---
         plot_cbf_values(cbf_history, env.dt * env.decimation, num_agents, save_path=os.path.join(out_dir, 'cbf_values.png'))
-    
-    print(f"frontier marking total dt : {env.total_dt}")
+
     print("=== Simulation Test Finished ===")
 
 
