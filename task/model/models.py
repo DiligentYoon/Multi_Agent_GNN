@@ -6,6 +6,15 @@ from torch import nn
 from torch.distributions import Categorical
 
 
+class MultiHeatmap(nn.Module):
+
+    def __init__(self):
+        super(MultiHeatmap, self).__init__()
+
+    def forward(self, x):
+        return MultiCategorical(x)
+
+
 class MultiCategorical:
     def __init__(self, logits):
         self.batch_size = len(logits)
@@ -381,19 +390,19 @@ class GNN(nn.Module):
 
 
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L15
-class RL_Policy(nn.Module):
+class RL_ActorCritic(nn.Module):
 
     def __init__(self, obs_shape, action_space, model_type='gconv',
                  base_kwargs=None, lr=None, eps=None):
 
-        super(RL_Policy, self).__init__()
+        super(RL_ActorCritic, self).__init__()
         if base_kwargs is None:
             base_kwargs = {}
 
         self.network = GNN(obs_shape, base_kwargs.get('num_gnn_layer') * ['self', 'cross'], base_kwargs.get('use_history'), base_kwargs.get('ablation'))
     
         assert action_space.__class__.__name__ == "Box"
-        self.dist = MultiCategorical()
+        self.dist = MultiHeatmap()
 
         self.actor_optimizer = torch.optim.Adam(set(filter(lambda p: p.requires_grad,
             self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,

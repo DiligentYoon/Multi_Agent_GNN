@@ -79,25 +79,17 @@ agent:
     checkpoint_interval: auto
 
 model:
-
-  feature_extractor:
-    common:
-      hidden: 128
-    teammate:
-      feature_dim: 10
-    region:
-      feature_dim: 10
-    obstacle:
-      feature_dim: 10
-    num_group: 3
-
-
-  actor:
-    type: "Gaussian"
-    hidden: [128, 64]
   
-  critic:
-    hidden: [128, 64]
+  # Model Configuration
+  model_type: gnn
+  num_gnn_layer: 3
+  use_history: true
+  ablation: false
+
+  # Optimizer Paramters
+  actor_lr: 1e-5
+  critic_lr: 1e-5
+  eps: 1e-6
     
 # Training Settings
 train:

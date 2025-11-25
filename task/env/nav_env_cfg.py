@@ -10,14 +10,14 @@ class NavEnvCfg(EnvCfg):
         super().__init__(cfg)
 
         # Space Information
-        self.num_obs = 1
-        self.num_state = 1
-        self.num_act = 2
+        self.num_obs = None # Not use in this env
+        self.num_state = None # Not use in this env
+        self.num_act = self.num_agent
         self.downsampling_rate = 2
         self.pooling_downsampling_rate = 4
 
         # Episode Information
-        self.decimation = 20
+        self.decimation = 30
         self.max_episode_steps = 1000
 
         # Controller Cfg

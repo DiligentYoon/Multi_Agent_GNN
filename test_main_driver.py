@@ -8,11 +8,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import imageio
 import os
-import traceback
+import gymnasium as gym
 from typing import List
 
-# Assuming the necessary classes are importable from your project structure
 from task.env.nav_env import NavEnv
+from task.model.models import RL_ActorCritic
+from task.agent.ppo import PPOAgent
 from task.agent.sac import SACAgent
 from task.utils import get_nominal_control, world_to_local
 from visualization import draw_frame, plot_cbf_values
@@ -21,17 +22,58 @@ PATH = os.path.join(os.getcwd())
 SPECIFIC_PATH = ""
 
 
-def create_models(cfg: dict, obs_dim: int, state_dim: int, action_dim: int, device: torch.device) -> dict:
+def create_models(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> dict:
     """
     Helper function to create models based on the config.
-    """
-    model_cfg = cfg['model']
 
-    return
+        Inputs:
+            cfg: Model Configuration Dictionary
+            observation_space : observation with respect to specific env
+            action_space : action with repsect to specific env
+            device : ["cpu", "cuda"]
+        
+        Returns:
+            actor_critic : Actor Critic Model [policy_net, critic_net]
+    """
+    model_cfg = cfg
+    for key, value in model_cfg.items():
+        if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
+            model_cfg[key] = float(value)
+
+    actor_critic = RL_ActorCritic(observation_space.shape, action_space,
+                                  model_type=model_cfg['model_type'],
+                                  base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                               'use_history': model_cfg['use_history'],
+                                               'ablation': model_cfg['ablation']},
+                                  lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                  eps=model_cfg['eps']).to(device)
+    return actor_critic
+
+
+def create_agent(cfg: dict, models: dict):
+    """
+    Helper function to create agent and corresponding buffer based on the config.
+
+        Inputs:
+            cfg: Agent Configuration Dictionary
+            models: Actor Critic Model [policy_net, critic_net]
+        
+        Returns:
+            agent : on policy (PPO) or off policy (SAC)
+    """
+    agent_cfg = cfg
+    algorithm = agent_cfg.get("alg", "PPO")
+    if algorithm == "PPO":
+        agent = PPOAgent()
+    elif algorithm == "SAC":
+        agent = SACAgent()
+    else:
+        raise ValueError("Unvalid Algorithm Types")
+
 
 def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True):
     """
-    Runs a simulation test for the CBFEnv and SACAgent, generating a GIF and plots.
+    Runs a simulation test, generating a GIF and plots.
         Inputs:
             cfg: Total Configuration
             stpes: maximum simulation steps
@@ -52,7 +94,11 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'])
     print("Environment created and reset.")
     # --- Agent & Models ---
+    pr = env.cfg.pooling_downsampling_rate
     num_agents = cfg['env']['num_agent']
+    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, env.map_info.H // pr, env.map_info.W // pr), dtype='uint8')
+    action_space = gym.spaces.Box(0, (env.map_info.H // pr) * (env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
+    actor_critic = create_models(cfg['model'], observation_space, action_space, device)
 
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
