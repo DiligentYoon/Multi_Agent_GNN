@@ -17,50 +17,40 @@ class Agent:
     3. Providing the `act` method for inference (can be used by the driver or parts of it, like the policy network, can be shipped to workers).
     """
     def __init__(self,
-                 models: Mapping[str, Module],
+                 model: Module,
                  device: torch.device,
                  cfg: Optional[dict] = None):
         
-        self.models = models
+        self.model = model
         self.cfg = cfg if cfg is not None else {}
         self.device = device
-
         # A dictionary to register modules for checkpointing by the driver
         self.checkpoint_modules = {}
-
-        # Initialize models and move them to the specified device
-        for model in self.models.values():
-            if model is not None:
-                model.to(self.device)
     
     def set_running_mode(self, mode: str):
         if mode == "train":
-            print("[INFO] Set Training Mode")
-            for model in self.models.values():
-                model.train()
+            self.model.train()
         elif mode == "eval":
-            print("[INFO] Set Eval Mode")
-            for model in self.models.values():
-                model.eval()
+            self.model.eval()
 
     @abstractmethod
     def act(self, states: torch.Tensor) -> torch.Tensor:
         """
-            Selects actions for all agents based on their states.
-            This method will be used by workers for decentralized execution.
+        Selects actions for all agents based on their states.
+        This method will be used by workers for decentralized execution.
 
-            :param states: A tensor of shape (num_agents, obs_dim)
-            :return: A tensor of shape (num_agents, action_dim)
+        :param states: A tensor of shape (num_agents, obs_dim)
+        :return: A tensor of shape (num_agents, action_dim)
         """
         raise NotImplementedError(f"Please implement the 'act' method for {self.__class__.__name__}.")
     
     @abstractmethod
-    def update(self, timestep, timesteps) -> None:
+    def update(self, data, timestep, timesteps) -> None:
         """
-            Performs a centralized training update step using a batch of data.
-            This method is called by the main driver.
+        Performs a centralized training update step using a batch of data.
+        This method is called by the main driver.
 
-            :param batch: A batch of experience data collected from workers.
-            :return: A dictionary containing training statistics (e.g., loss values).
+        :param batch: A batch of experience data collected from workers.
+        :return: A dictionary containing training statistics (e.g., loss values).
         """
         raise NotImplementedError(f"Please implement the 'update' method for {self.__class__.__name__}.")

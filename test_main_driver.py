@@ -13,16 +13,17 @@ from typing import List
 
 from task.env.nav_env import NavEnv
 from task.model.models import RL_ActorCritic
-from task.agent.ppo import PPOAgent
+from task.agent.ppo import Agent, PPOAgent
 from task.agent.sac import SACAgent
-from task.utils import get_nominal_control, world_to_local
+from task.buffer.rolloutbuffer import RolloutBuffer, CoMappingRolloutBuffer
+
 from visualization import draw_frame, plot_cbf_values
 
 PATH = os.path.join(os.getcwd())
 SPECIFIC_PATH = ""
 
 
-def create_models(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> dict:
+def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> RL_ActorCritic:
     """
     Helper function to create models based on the config.
 
@@ -50,7 +51,8 @@ def create_models(cfg: dict, observation_space: gym.Space, action_space: gym.Spa
     return actor_critic
 
 
-def create_agent(cfg: dict, models: dict):
+def create_agent(cfg: dict, model: RL_ActorCritic, num_agents: int, eval_freq: int, 
+                 observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> tuple[Agent, RolloutBuffer]:
     """
     Helper function to create agent and corresponding buffer based on the config.
 
@@ -62,13 +64,27 @@ def create_agent(cfg: dict, models: dict):
             agent : on policy (PPO) or off policy (SAC)
     """
     agent_cfg = cfg
+    buffer_cfg = agent_cfg["buffer"]
     algorithm = agent_cfg.get("alg", "PPO")
     if algorithm == "PPO":
-        agent = PPOAgent()
+        buffer = CoMappingRolloutBuffer(buffer_cfg["rollout"], 
+                                        num_envs=1, 
+                                        eval_freq=eval_freq,
+                                        num_repeats=agent_cfg["num_gae_block"],
+                                        num_agents=1, # Centralized Network
+                                        obs_shape=observation_space.shape,
+                                        action_space=action_space,
+                                        rec_state_size=model.rec_state_size,
+                                        extras_size=num_agents * 6
+                                        ).to(device)
+        agent = PPOAgent(model, device, agent_cfg)
     elif algorithm == "SAC":
+        raise ValueError("Not Buffer Implementation yet.")
         agent = SACAgent()
     else:
-        raise ValueError("Unvalid Algorithm Types")
+        raise ValueError("Unvalid Algorithm Types.")
+
+    return agent, buffer
 
 
 def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True):
@@ -98,7 +114,9 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     num_agents = cfg['env']['num_agent']
     observation_space = gym.spaces.Box(0, 1, (8 + num_agents, env.map_info.H // pr, env.map_info.W // pr), dtype='uint8')
     action_space = gym.spaces.Box(0, (env.map_info.H // pr) * (env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
-    actor_critic = create_models(cfg['model'], observation_space, action_space, device)
+    actor_critic_model = create_model(cfg['model'], observation_space, action_space, device)
+    agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
+                                      cfg['train']['eval_freq'], observation_space, action_space, device)
 
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
@@ -108,10 +126,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
     path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
-    
-    obs, state, info = env.reset(episode_index=25)
-    actions = None
-    
+
     # --- Callback for rendering each physics step ---
     def render_callback(env_instance: NavEnv):
         # This function is only called if visualize is True.
@@ -149,9 +164,12 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     # Determine which callback to use
     callback_fn = render_callback if visualize else None
 
+
+    # ================ Simulation Start ====================
+    obs, _, info = env.reset(episode_index=25)
+    actions = None
     for step_num in range(steps):
-        # Pass the callback to the step function
-        next_obs, next_state, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
+        next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
         
         # --- Record data for final plots (once per RL step) ---
         if visualize:
@@ -179,7 +197,6 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
         print(f"RL Step: {step_num+1}/{steps}")
 
         obs = next_obs
-        state = next_state
         info = next_info
         
         if np.any(terminated) or np.any(truncated):
@@ -202,7 +219,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
 if __name__ == '__main__':
     # Load config
-    with open("config/nav_cfg.yaml", 'r') as f:
+    with open("config/nav_ppo_cfg.yaml", 'r') as f:
         config = yaml.safe_load(f)
     
     # It's good practice to run tests with deterministic behavior
@@ -210,4 +227,4 @@ if __name__ == '__main__':
     np.random.seed(config['env']['seed'])
     
     # Run the test with visualization enabled
-    run_simulation_test(config, steps=50, visualize=True)
+    run_simulation_test(config, steps=50, visualize=False)

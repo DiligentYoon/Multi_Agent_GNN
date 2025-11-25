@@ -159,7 +159,7 @@ class NavEnv(Env):
         """
         Env 설정 상, State와 Observation은 동일 (Symmetric Actor-Critic)
         """
-        return copy.deepcopy(self.obs_buf)
+        pass
     
 
     def _get_rewards(self):
