@@ -33,7 +33,7 @@ class MultiCategorical:
     def log_probs(self, actions):
         assert actions.shape == (self.batch_size, self.multi)
         assert torch.tensor([d.probs.shape[1] > actions[b].max().item() for b, d in enumerate(self.dist)]).all()
-        return torch.stack([d.log_probs(actions[b]).sum() for b, d in enumerate(self.dist)])
+        return torch.stack([d.log_prob(actions[b]).sum() for b, d in enumerate(self.dist)])
 
     def entropy(self):
         return torch.stack([d.entropy().sum() for b, d in enumerate(self.dist)])
@@ -356,9 +356,8 @@ class GNN(nn.Module):
         # desc_dim = 128
         desc_dim = 32
         self.actor = Actor(desc_dim, gnn_layers, use_history, ablation)
-        # self.critic = Critic(desc_dim)
-        out_size = int(input_shape[1] / 8. * input_shape[2] / 8.)
-        self.critic = nn.Sequential(
+
+        self.critic_encoder = nn.Sequential(
             nn.Conv2d(6, 64, 6, stride=2, padding=2),
             # nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
@@ -374,13 +373,26 @@ class GNN(nn.Module):
             nn.Conv2d(64, 16, 5, stride=1, padding=2),
             # nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
-            Flatten(),
-            nn.Linear(out_size * 16, 512),
+            Flatten()
+        )
+
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 6, input_shape[1], input_shape[2])
+            flatten_size = self.critic_encoder(dummy_input).shape[1]
+
+        self.critic_layer = nn.Sequential(
+            nn.Linear(flatten_size, 512),
             nn.ReLU(inplace=True),
             nn.Linear(512, 256),
             nn.ReLU(inplace=True),
             nn.Linear(256, 1),
         )
+
+        self.critic = nn.Sequential(
+            self.critic_encoder,
+            self.critic_layer
+        )
+
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks, extras):

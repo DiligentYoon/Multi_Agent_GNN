@@ -39,9 +39,12 @@ class ObservationManager:
         self.pooling_downsampling = cfg["pooling_downsampling"]
         self.device = device
 
-        # Initializing full and local map
+        # Initializing full map, down-scaled map, info
         # obs/frontier/all pos/all trajectory/explored/explorable/history pos/history goal
         self.global_map = torch.zeros(8, self.global_map_h, self.global_map_w).float().to(device)
+        # 1-2 cartesian global agent location, 3-6 local map boundary
+        self.global_info = torch.zeros(self.num_robots, 6).long()
+        
 
         # Initial full and local pose
         self.global_pose = np.zeros((self.num_robots, 2)) # [x ,y]
@@ -95,6 +98,7 @@ class ObservationManager:
         agent_location = cell_pos # [col, row]
         for e in range(self.num_robots):
             agent_location_r, agent_location_c = agent_location[e, 1], agent_location[e, 0]
+            self.global_info[e, :2] = torch.tensor((agent_location_r, agent_location_c))
             self.global_map[3, agent_location_r, agent_location_c] = 1.
 
             self.local_map_boundary[e] = get_local_map_boundaries((agent_location_r, agent_location_c), 
@@ -138,10 +142,13 @@ class ObservationManager:
                                               (self.global_map_w, self.global_map_h)) # [col, row]
             agent_location_r = max(0, min(self.global_map_h, agent_location_r))
             agent_location_c = max(0, min(self.global_map_w, agent_location_c))
+            self.global_info[e, :2] = torch.tensor((agent_location_r, agent_location_c))
             self.global_map[[2, 6], agent_location_r, agent_location_c] = 1
             self.global_map[3, agent_location_r, agent_location_c] = 1
             self.local_map_origins[e] = self.grid_to_world_np(np.array([lmb[e, 0],
                                                                        lmb[e, 2]])) # [col, row] -> [x, y]
+            
+        self.global_info[:, 2:] = torch.from_numpy(self.local_map_boundary)
         self.local_pose = self.global_pose - self.local_map_origins
 
 

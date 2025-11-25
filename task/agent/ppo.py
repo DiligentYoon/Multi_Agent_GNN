@@ -16,7 +16,7 @@ class PPOAgent(Agent):
     
         super().__init__(model, device, cfg)
 
-
+        
         self.actor_optimizer = self.model.actor_optimizer
         self.critic_optimizer = self.model.critic_optimizer
 
@@ -34,6 +34,11 @@ class PPOAgent(Agent):
         self.value_loss_coef = self.cfg["value_loss_coef"]
         self.entropy_loss_coef = self.cfg["entropy_loss_coef"]
         self.policy_loss_coef = self.cfg["policy_loss_coef"]
+
+    
+    def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
+        
+        return self.model.act(inputs, rnn_hxs, masks, extras, deterministic)
 
     
     def update(self, data):

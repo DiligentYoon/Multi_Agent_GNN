@@ -62,6 +62,8 @@ class NavEnv(Env):
         self.neighbor_states = np.zeros((self.num_agent, self.cfg.max_agents-1, 4), dtype=np.float32)
         self.neighbor_ids = np.zeros((self.num_agent, self.cfg.max_agents-1), dtype=np.int_)
 
+        self.assigned_rc = np.zeros((self.num_agent, 2), dtype=np.long)
+
         # Replanning State
         self.agent_paths = [None] * self.num_agent
         self.agent_path_targets = [None] * self.num_agent
@@ -70,7 +72,10 @@ class NavEnv(Env):
         self.is_collided_obstacle = np.zeros((self.num_agent, 1), dtype=np.bool_)
         self.is_collided_drone = np.zeros((self.num_agent, 1), dtype=np.bool_)
 
-        # Additional Info
+        # Additional Info (1)
+        self.infos["additional_obs"] = torch.zeros(self.num_agent, 6).long()
+
+        # Additional Info (2)
         self.cbf_infos = {}
         self.cbf_infos["safety"] = {}
         self.cbf_infos["nominal"] = {}
@@ -92,14 +97,16 @@ class NavEnv(Env):
                 info : additional information
         """
         self.history_action_map = np.zeros((self.map_info.H // self.cfg.pooling_downsampling_rate, self.map_info.W // self.cfg.pooling_downsampling_rate))
-        self.connectivity_traj = [[] for _ in range(self.num_agent)]
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         
+        # Reset Function
+        obs, state, info = super().reset(episode_index)
+        
         # Reset replanning states
+        self.connectivity_traj = [[] for _ in range(self.num_agent)]
         self.agent_paths = [None] * self.num_agent
         self.agent_path_targets = [None] * self.num_agent
 
-        obs, state, info = super().reset(episode_index)
 
         return obs, state, info
     
@@ -107,13 +114,27 @@ class NavEnv(Env):
     def _pre_apply_action(self, actions: torch.Tensor):
         """
         [Centralized] 제어 입력을 계산하기 위한 전처리 작업 수행
-        1. Target Point action을 받아서 각 에이전트에게 할당
-        2. MST 업데이트 with Leader Agent 지정
+        1. Target Point action을 받아, Frontier Map으로부터 실제 좌표로 매핑
+        2. 각 에이전트에게 매핑된 Frontier 좌표 할당
+        3. MST 업데이트 with Leader Agent 지정
 
             Inputs:
                 actions : 에이전트 별 Target Point
         """
         self.actions = actions
+        cpu_action = actions.cpu().numpy().reshape(-1)
+        frontier_idx = torch.nonzero(self.obs_buf[1, :, :]).cpu().numpy() # [F, 2]
+        for i in range(self.num_agent):
+            # Down Sampled 차원에서 History Map 업데이트
+            downsampled_id = frontier_idx[cpu_action[i], :] # TODO: 매핑관계 validation [1, 2]
+            self.history_action_map[downsampled_id[0], downsampled_id[1]] = 1
+
+            # 실제 Map Scale로 Up-Scaling 및 중앙 보정
+            ds = self.cfg.pooling_downsampling_rate
+            upscaled_id = downsampled_id * ds + ds // 2 # 업스케일 후, 중앙으로 가져오기
+
+            # 보정된 Target Point를 최종 할당
+            self.assigned_rc[i] = upscaled_id
 
 
     def _apply_actions(self):
@@ -146,7 +167,7 @@ class NavEnv(Env):
         self.robot_velocities[active_mask, 1] = self.robot_speeds[active_mask] * np.sin(new_angles)
     
 
-    def _get_observations(self) -> np.ndarray | list[dict]:
+    def _get_observations(self) -> torch.Tensor:
         """
         이번 스텝에 출력되었던 Action을 기반으로 History Action Map을 누적 업데이트하고,
         Observation Manager로부터 관측 벡터 Setting
@@ -155,11 +176,11 @@ class NavEnv(Env):
         return observation
     
 
-    def _get_states(self) -> np.ndarray | list[dict]:
+    def _get_states(self) -> torch.Tensor:
         """
         Env 설정 상, State와 Observation은 동일 (Symmetric Actor-Critic)
         """
-        pass
+        return None
     
 
     def _get_rewards(self):
@@ -226,10 +247,13 @@ class NavEnv(Env):
         return terminated, truncated, reached_goal
 
 
-    def _compute_intermediate_values(self):
+    def _compute_intermediate_values(self, reset: bool = False):
         """
         [Centralized] 업데이트된 state값들을 바탕으로, Planning state 계산
         """
+        if reset:
+            self.obs_manager.init_map_and_pose(cell_pos=self.map_info.world_to_grid_np(self.robot_locations), 
+                                               cartesian_pos=self.robot_locations)
         # Global Frontier Marking
         self.map_info.belief_frontier = global_frontier_marking(self.map_info)
 
@@ -268,37 +292,40 @@ class NavEnv(Env):
         self.connectivity_graph.update_and_compute_mst(self.robot_locations, root_id)
 
 
-        # 1) Global KD-Tree Valid Node 선택 & 점수 할당
-        regions = self.global_kd_tree.leaves
-        valid_regions = self.global_kd_tree.update_node_states(self.map_info, self.robot_locations)
-        # 2) Local KD-Tree 빌드 & 점수 할당
-        for region in valid_regions:
-            local_regions, local_scores = split_and_score_local_region(region.bounds, self.robot_locations, self.map_info)
-            total_local_regions.extend(local_regions)
-            total_local_scores.extend(local_scores)
-        # 3) Local Region Clustering w.r.t each score
-        if total_local_regions:
-            cluster_infos = local_region_clustering(total_local_regions, total_local_scores)
-        else:
-            # 예외 처리 필요
-            raise ValueError("No valid local regions found.")
-        # 4) Target Point Generation
-        targets_rc, targets_prob, valid_cluster_ids = sample_k_targets_in_multi_regions_value(self.map_info, 
-                                                                                              cluster_infos,
-                                                                                              k=self.num_agent*3, 
-                                                                                              rng=self.seed)
-        # 5) Point Allocation by Hungarian algorithms
-        assigned_rc = assign_targets_hungarian(self.map_info, self.robot_locations, targets_rc, self.num_agent)
-        # 6) Memory for cascade system
-        self.regions = regions
-        self.valid_regions = valid_regions
-        self.assigned_rc = np.array(assigned_rc)
+        # # 1) Global KD-Tree Valid Node 선택 & 점수 할당
+        # regions = self.global_kd_tree.leaves
+        # valid_regions = self.global_kd_tree.update_node_states(self.map_info, self.robot_locations)
+        # # 2) Local KD-Tree 빌드 & 점수 할당
+        # for region in valid_regions:
+        #     local_regions, local_scores = split_and_score_local_region(region.bounds, self.robot_locations, self.map_info)
+        #     total_local_regions.extend(local_regions)
+        #     total_local_scores.extend(local_scores)
+        # # 3) Local Region Clustering w.r.t each score
+        # if total_local_regions:
+        #     cluster_infos = local_region_clustering(total_local_regions, total_local_scores)
+        # else:
+        #     # 예외 처리 필요
+        #     raise ValueError("No valid local regions found.")
+        # # 4) Target Point Generation
+        # targets_rc, targets_prob, valid_cluster_ids = sample_k_targets_in_multi_regions_value(self.map_info, 
+        #                                                                                       cluster_infos,
+        #                                                                                       k=self.num_agent*3, 
+        #                                                                                       rng=self.seed)
+        # # 5) Point Allocation by Hungarian algorithms
+        # assigned_rc = assign_targets_hungarian(self.map_info, self.robot_locations, targets_rc, self.num_agent)
+        # # 6) Memory for cascade system
+        # self.regions = regions
+        # self.valid_regions = valid_regions
+        # self.assigned_rc = np.array(assigned_rc)
 
         # =================================================================================================
 
 
     def _update_infos(self):
-        pass
+        infos = copy.deepcopy(self.infos)
+        infos["additional_obs"] = self.obs_manager.global_info
+
+        return infos
 
 
 

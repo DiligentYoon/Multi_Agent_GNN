@@ -118,6 +118,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
 
+
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
     fig, ax1, ax2 = None, None, None
@@ -144,11 +145,13 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
                 pos2 = pos1
             connectivity_pairs.append((pos1, pos2))
 
+
         # Create a dictionary with visualization data
         viz_data = {
             "paths": path_history,
             "obs_local": env_instance.obstacle_states,
             "connectivity_pairs": connectivity_pairs,
+            "target_assigned": env_instance.map_info.grid_to_world_np(np.flip(env_instance.assigned_rc)),
             "target_local": env_instance.cbf_infos["nominal"]["p_targets"],
             "connectivity_trajs": env_instance.connectivity_traj,
         }
@@ -167,8 +170,31 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
     # ================ Simulation Start ====================
     obs, _, info = env.reset(episode_index=25)
-    actions = None
+
+    # 초기 액션 세팅 + 스텝
+    l = buffer.mini_step * buffer.mini_step_size
+    h = (buffer.mini_step + 1) * buffer.mini_step_size
+    buffer.obs[0][l:h].copy_(obs.view(1, *observation_space.shape))
+    buffer.extras[0][l:h].copy_(info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate)
+
+    ll, lh = l-buffer.mini_step_size, h-buffer.mini_step_size
+    if lh == 0:
+        lh = buffer.mini_step_size * buffer.num_mini_step
+    # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (코드 처음에만 수행)
+    buffer.obs[-1][ll:lh].copy_(buffer.obs[0][l:h])
+    buffer.rec_states[-1][ll:lh].copy_(buffer.rec_states[0][l:h])
+    buffer.extras[-1][ll:lh].copy_(buffer.extras[0][l:h])
+
     for step_num in range(steps):
+        if step_num == 0:
+            values, actions, action_log_probs, rec_statess, action_maps = agent.act(buffer.obs[0][l:h],
+                                                                                    buffer.rec_states[0][l:h],
+                                                                                    buffer.masks[0][l:h],
+                                                                                    extras=buffer.extras[0][l:h],
+                                                                                    deterministic=False)
+        else:
+            pass
+
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
         
         # --- Record data for final plots (once per RL step) ---

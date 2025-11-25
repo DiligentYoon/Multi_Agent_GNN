@@ -113,7 +113,15 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
         target_world = local_to_world(robot, target_local, robot_yaw)
         fx, fy = world_to_img(target_world[0, 0], target_world[0, 1])
         for ax in (ax_gt, ax_belief):
-            ax.scatter(fx, fy, s=25, c=color, marker='.', zorder=4, alpha=0.4)
+            ax.scatter(fx, fy, s=50, c=color, marker='.', zorder=4, alpha=0.4)
+
+        # --- Assigned Target ---
+        target_assigned_xy = viz_data["target_assigned"][i]
+        fx, fy = world_to_img(target_assigned_xy[0], target_assigned_xy[1])
+        for ax in (ax_gt, ax_belief):
+            ax.scatter(fx, fy, s=50, c=color, marker='*')
+        
+
         
         # --- Path history ---
         path = viz_data["paths"][i]

@@ -177,7 +177,7 @@ class Env():
                                                        360,
                                                        self.map_info.map_mask)
         
-        self._compute_intermediate_values()
+        self._compute_intermediate_values(reset=True)
         self.infos = self._update_infos()
         self.obs_buf = self._get_observations()
         self.state_buf = self._get_states()
@@ -187,13 +187,14 @@ class Env():
 
 
 
-    def step(self, actions, on_physics_step: Optional[Callable[['Env'], None]] = None) -> Tuple[np.ndarray,
-                                     np.ndarray,
-                                     np.ndarray,
-                                     np.ndarray,
-                                     np.ndarray,
-                                     np.ndarray,
-                                     dict[str, np.ndarray]]:
+    def step(self, actions: torch.Tensor, 
+             on_physics_step: Optional[Callable[['Env'], None]] = None) -> Tuple[torch.Tensor,
+                                                                                 torch.Tensor,
+                                                                                 torch.Tensor,
+                                                                                 torch.Tensor,
+                                                                                 torch.Tensor,
+                                                                                 torch.Tensor,
+                                                                                 dict[str, torch.Tensor]]:
         """
         액션에 따른 시뮬레이션 환경의 한 스텝 진행
             Inputs:
@@ -241,7 +242,14 @@ class Env():
         self.obs_buf = self._get_observations()
         self.state_buf = self._get_states()
 
-
+        # Tensor 변환
+        if not isinstance(self.reward_buf, torch.Tensor):
+            self.reward_buf = torch.tensor(self.reward_buf, dtype=self.reward_buf.dtype).to(self.device)
+        if not isinstance(self.termination_buf, torch.Tensor):
+            self.termination_buf = torch.tensor(self.termination_buf, dtype=torch.bool).to(self.device)
+        if not isinstance(self.truncation_buf, torch.Tensor):
+            self.truncation_buf = torch.tensor(self.truncation_buf, dtype=torch.bool).to(self.device)
+        
         return self.obs_buf, self.state_buf, self.reward_buf, self.termination_buf, self.truncation_buf, self.infos
 
 
@@ -274,7 +282,7 @@ class Env():
     # =============== Env-Specific Abstract Methods =================
     
     @abstractmethod
-    def _pre_apply_action(self, actions):
+    def _pre_apply_action(self, actions: torch.Tensor):
         raise NotImplementedError(f"Please implement the '_pre_apply_action' method for {self.__class__.__name__}.") 
 
     @abstractmethod
@@ -298,12 +306,12 @@ class Env():
 
 
     @abstractmethod
-    def _compute_intermediate_values(self) -> None:
+    def _compute_intermediate_values(self, reset: bool) -> None:
         raise NotImplementedError(f"Please implement the '_compute_intermediate_values' method for {self.__class__.__name__}.")
 
 
     @abstractmethod
-    def get_rewards(self) -> np.ndarray:
+    def _get_rewards(self) -> np.ndarray:
         raise NotImplementedError(f"Please implement the '_get_rewards' method for {self.__class__.__name__}.")
     
     @abstractmethod
