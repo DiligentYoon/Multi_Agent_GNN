@@ -1,6 +1,6 @@
 from copy import deepcopy
 import torch
-
+import os
 
 from torch import nn
 from torch.distributions import Categorical
@@ -496,4 +496,5 @@ class RL_ActorCritic(nn.Module):
             'actor_optimizer': self.actor_optimizer.state_dict(),
             'critic_optimizer': self.critic_optimizer.state_dict(),
         }
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(state, path)

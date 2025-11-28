@@ -8,7 +8,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import imageio
 import gymnasium as gym
+import datetime
 
+from torch.utils.tensorboard import SummaryWriter
 from collections import deque
 from typing import List
 from task.env.nav_env import NavEnv
@@ -87,7 +89,7 @@ def create_agent(cfg: dict, model: RL_ActorCritic, num_agents: int, eval_freq: i
     return agent, buffer
 
 
-def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True):
+def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True, load_file_path: str = None):
     """
     Runs a simulation test, generating a GIF and plots.
         Inputs:
@@ -101,9 +103,24 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     if not visualize:
         print("Visualization is OFF.")
         
-    # --- Output Directory ---
+    # --- Output Directory & Writer & Checkpoint ---
     os.makedirs(out_dir, exist_ok=True)
-    print(f"Results will be saved to: {out_dir}")
+    print(f"Evaluation Results will be saved to: {out_dir}")
+    start_time = datetime.datetime.now().strftime("%y-%m-%d_%H-%M-%S")
+
+    experiment_dir = os.path.join("results", f"{start_time}_{cfg['agent']['experiment']['directory']}")
+    os.makedirs(experiment_dir, exist_ok=True)
+    print(f"Training Results will be saved to {experiment_dir}")
+
+    timesteps = cfg["train"]["timesteps"]
+    write_interval = cfg['agent']['experiment']['write_interval']
+    if write_interval == 'auto':
+        write_interval = int(timesteps / 10)
+    writer = SummaryWriter(log_dir=experiment_dir)
+
+    checkpoint_interval = cfg['agent']['experiment']['checkpoint_interval']
+    if checkpoint_interval == 'auto':
+        checkpoint_interval = int(timesteps / 10)
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
@@ -117,6 +134,8 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     actor_critic_model = create_model(cfg['model'], observation_space, action_space, device)
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
+    if load_file_path is not None:
+        agent.model.load(os.path.join(os.getcwd(), load_file_path), device=device)
 
     value_losses = deque(maxlen=100)
     action_losses = deque(maxlen=100)
@@ -170,7 +189,6 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     # Determine which callback to use
     callback_fn = render_callback if visualize else None
 
-
     # ================ Simulation Start ====================
     obs, _, info = env.reset(episode_index=25)
 
@@ -207,7 +225,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
         done = torch.logical_or(terminated, truncated)
 
         # 시점 t+1에서의 observation, rec_states, addtional_info 
-        # 시점 t에서의   action 저장
+        # 시점 t에서의 action 저장
         # 시점 t+1에서의 reward, done 저장
         buffer.insert(
             # obs_t+1, rec_state_t+1
@@ -265,6 +283,21 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
             buffer.after_update()
             print("Update completed.")
 
+        # TODO: 추후, Ray 전용 모델 저장 로직으로 사용
+        # if step_num > 0 and (step_num - episode_length) // write_interval < step_num // write_interval:
+        #     write_tracking_data(step_num)
+        # # Checkpoint
+        # if step_num > 0 and (step_num - episode_length) // checkpoint_interval < step_num // checkpoint_interval:
+        #     save_checkpoint(step_num)
+
+
+        # if step_num > 0 and (step_num % write_interval):
+        #     agent.model.save(step_num)
+        # Checkpoint
+        if step_num > 0 and (step_num & checkpoint_interval):
+            filepath = os.path.join(os.getcwd(), os.path.join(experiment_dir, "checkpoints", f"agent_{step_num}.pt"))
+            agent.model.save(filepath)
+
 
         # 시점 transition
         obs = next_obs
@@ -288,6 +321,8 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     print("=== Simulation Test Finished ===")
 
 
+
+
 if __name__ == '__main__':
     # Load config
     with open("config/nav_ppo_cfg.yaml", 'r') as f:
@@ -298,4 +333,7 @@ if __name__ == '__main__':
     np.random.seed(config['env']['seed'])
     
     # Run the test with visualization enabled
-    run_simulation_test(config, steps=50, visualize=False)
+    run_simulation_test(config, 
+                        steps=50, 
+                        visualize=False,
+                        load_file_path='results/25-11-29_00-46-31_MARL/checkpoints/agent_15.pt')
