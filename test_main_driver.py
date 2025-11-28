@@ -7,14 +7,14 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import imageio
-import os
 import gymnasium as gym
-from typing import List
 
+from collections import deque
+from typing import List
 from task.env.nav_env import NavEnv
-from task.model.models import RL_ActorCritic
-from task.agent.ppo import Agent, PPOAgent
 from task.agent.sac import SACAgent
+from task.agent.ppo import Agent, PPOAgent
+from task.model.models import RL_ActorCritic
 from task.buffer.rolloutbuffer import RolloutBuffer, CoMappingRolloutBuffer
 
 from visualization import draw_frame, plot_cbf_values
@@ -118,6 +118,9 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
 
+    value_losses = deque(maxlen=100)
+    action_losses = deque(maxlen=100)
+    dist_entropies = deque(maxlen=100)
 
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
@@ -179,24 +182,44 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
     ll, lh = l-buffer.mini_step_size, h-buffer.mini_step_size
     if lh == 0:
-        lh = buffer.mini_step_size * buffer.num_mini_step
+        lh = buffer.mini_step_size * buffer.num_rollout_blocks
     # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (코드 처음에만 수행)
     buffer.obs[-1][ll:lh].copy_(buffer.obs[0][l:h])
     buffer.rec_states[-1][ll:lh].copy_(buffer.rec_states[0][l:h])
     buffer.extras[-1][ll:lh].copy_(buffer.extras[0][l:h])
 
-    for step_num in range(steps):
-        if step_num == 0:
-            values, actions, action_log_probs, rec_statess, action_maps = agent.act(buffer.obs[0][l:h],
-                                                                                    buffer.rec_states[0][l:h],
-                                                                                    buffer.masks[0][l:h],
-                                                                                    extras=buffer.extras[0][l:h],
-                                                                                    deterministic=False)
-        else:
-            pass
+    # act를 위한 변수 초기화
+    rec_states = buffer.rec_states[0][l:h]
+    mask = buffer.masks[0][l:h]
 
+    for step_num in range(steps):
+
+        with torch.no_grad():
+            values, actions, action_log_probs, \
+            rec_states, action_maps             = agent.act(obs.view(1, *observation_space.shape),
+                                                            rec_states,
+                                                            mask,
+                                                            info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
+                                                            deterministic=False)
+
+        # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
-        
+        done = torch.logical_or(terminated, truncated)
+
+        # 시점 t+1에서의 observation, rec_states, addtional_info 
+        # 시점 t에서의   action 저장
+        # 시점 t+1에서의 reward, done 저장
+        buffer.insert(
+            # obs_t+1, rec_state_t+1
+            next_obs.view(1, *observation_space.shape), rec_states,
+            # action_t, action_log_t, value_t
+            actions, action_log_probs, values,
+            # reward_t+1, done_t+1
+            reward, ~done,
+            # info_t+1
+            next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
+        )
+
         # --- Record data for final plots (once per RL step) ---
         if visualize:
             for j in range(num_agents):
@@ -222,10 +245,32 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
         print(f"RL Step: {step_num+1}/{steps}")
 
+        if (step_num % buffer.rollouts == buffer.rollouts - 1) and buffer.mini_step == 0:
+            # 롤아웃이 끝났으면 파라미터 업데이트 수행. 먼저 마지막 스텝에 대한 +1 step value값 예측
+            print("Updating agent...")
+            next_value = agent.model.get_value(
+                buffer.obs[-1],
+                buffer.rec_states[-1],
+                buffer.masks[-1],
+                extras=buffer.extras[-1]
+            )[0].detach()
+
+            buffer.compute_returns(next_value, True, agent.cfg['discount_factor'], agent.cfg['gae_lambda'])
+
+            value_loss, action_loss, dist_entropy = agent.update(buffer)
+            if value_loss > 0:
+                    value_losses.append(value_loss)
+                    action_losses.append(action_loss)
+                    dist_entropies.append(dist_entropy)
+            buffer.after_update()
+            print("Update completed.")
+
+
+        # 시점 transition
         obs = next_obs
         info = next_info
         
-        if np.any(terminated) or np.any(truncated):
+        if done:
             print("Episode finished.")
             break
 

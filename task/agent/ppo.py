@@ -34,7 +34,9 @@ class PPOAgent(Agent):
         self.value_loss_coef = self.cfg["value_loss_coef"]
         self.entropy_loss_coef = self.cfg["entropy_loss_coef"]
         self.policy_loss_coef = self.cfg["policy_loss_coef"]
+        
 
+        self.use_clipped_value_loss = False
     
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
         
@@ -54,17 +56,17 @@ class PPOAgent(Agent):
         action_loss_epoch = 0
         dist_entropy_epoch = 0
 
-        for e in range(self.ppo_epoch):
+        for e in range(self.epoch):
             data_generator = data.sample_mini_batch(advantages, 
                                                     self.mini_batch_size, 
                                                     self.max_batch_size, 
                                                     self.rotation_augmentation, 
-                                                    ds=self.actor_critic.network.downscaling)
+                                                    ds=self.model.network.downscaling)
 
             for sample in data_generator:
                 # Reshape to do in a single forward pass for all steps
                 values, action_log_probs, dist_entropy, _, action_feature = \
-                    self.actor_critic.evaluate_actions(
+                    self.model.evaluate_actions(
                         sample['obs'], sample['rec_states'],
                         sample['masks'], sample['actions'],
                         extras=sample['extras']
@@ -78,9 +80,8 @@ class PPOAgent(Agent):
 
                 ratio = torch.exp(action_log_probs - old_action_log_probs)
                 surr1 = ratio * adv_targ
-                surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
+                surr2 = torch.clamp(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio) * adv_targ
                 action_loss = -torch.min(surr1, surr2).mean()
-                action_clip = (torch.abs(ratio - 1.0) <= self.clip_param).float().mean().item()
                 if torch.isnan(action_loss):
                     print('aloss nan')
                     continue
@@ -88,26 +89,24 @@ class PPOAgent(Agent):
                 if self.use_clipped_value_loss:
                     value_pred_clipped = value_preds + \
                                         (values - value_preds).clamp(
-                                            -self.clip_param, self.clip_param)
+                                            -self.clip_ratio, self.clip_ratio)
                     value_losses = (values - returns).pow(2)
                     value_losses_clipped = (value_pred_clipped
                                             - returns).pow(2)
                     value_loss = .5 * torch.max(value_losses,
                                                 value_losses_clipped).mean()
-                    value_clip = (torch.abs(values - value_preds) <= self.clip_param).float().mean().item()
                 else:
                     value_loss = 0.5 * (returns - values).pow(2).mean()
-                    value_clip = 1.
 
-                print('a/v clip: {:.3f}/{:.3f}'.format(action_clip, value_clip))
+                # print('a/v clip: {:.3f}/{:.3f}'.format(action_clip, value_clip))
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
 
                 (value_loss * self.value_loss_coef + action_loss * self.policy_loss_coef - dist_entropy * self.entropy_loss_coef).backward()
                 
-                torch.nn.utils.clip_grad_norm_(self.actor_critic.network.actor.parameters(), self.max_grad_norm)
-                torch.nn.utils.clip_grad_norm_(self.actor_critic.network.critic.parameters(), self.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.model.network.actor.parameters(), self.grad_norm_clip)
+                torch.nn.utils.clip_grad_norm_(self.model.network.critic.parameters(), self.grad_norm_clip)
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
 
@@ -116,7 +115,7 @@ class PPOAgent(Agent):
                     action_loss_epoch += action_loss.item()
                     dist_entropy_epoch += dist_entropy.item()
         
-        num_updates = self.ppo_epoch * self.num_mini_batch
+        num_updates = self.epoch * self.mini_batch_size
 
         value_loss_epoch /= num_updates
         action_loss_epoch /= num_updates

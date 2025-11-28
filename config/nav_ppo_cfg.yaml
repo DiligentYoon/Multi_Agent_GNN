@@ -73,7 +73,7 @@ agent:
   policy_loss_coef: 1.0
 
   buffer:
-    rollout: 12
+    rollout: 4
 
   experiment:
     directory: "MARL"

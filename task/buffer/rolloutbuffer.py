@@ -84,7 +84,7 @@ class RolloutBuffer(object):
         self.masks = torch.ones(rollouts + 1, num_envs * num_agents * num_repeats)
         self.open = torch.ones(num_envs * num_agents * num_repeats).bool()
 
-        self.num_mini_step = num_repeats
+        self.num_rollout_blocks = num_repeats
         self.mini_step_size = num_envs * num_agents
         self.rollouts = rollouts
         self.step = 0
@@ -125,12 +125,20 @@ class RolloutBuffer(object):
                masks):
         """
         환경으로부터 얻은 데이터 & 예측치를 버퍼에 순차적으로 저장
+            Inputs:
+                obs: observation at t+1
+                rec_states: recurrent state at t+1
+                actions: action at t
+                action_log_probs: log probability of action at t
+                value_preds: predicted next q value at t
+                rewards: reward at t+1
+                masks: done mask at t+1
         """
         l, h = self.mini_step * self.mini_step_size, (self.mini_step + 1) * self.mini_step_size
         if self.step == 0:
             ll, lh = l-self.mini_step_size, h-self.mini_step_size
             if lh == 0:
-                lh = self.mini_step_size * self.num_mini_step
+                lh = self.mini_step_size * self.num_rollout_blocks
             self.obs[0][l:h].copy_(self.obs[-1][ll:lh])
             self.rec_states[0][l:h].copy_(self.rec_states[-1][ll:lh])
         self.obs[self.step + 1][l:h].copy_(obs)
@@ -144,7 +152,7 @@ class RolloutBuffer(object):
 
         self.step = (self.step + 1) % self.rollouts
         if self.step == 0:
-            self.mini_step = (self.mini_step + 1) % self.num_mini_step
+            self.mini_step = (self.mini_step + 1) % self.num_rollout_blocks
 
 
     def after_update(self):
@@ -168,7 +176,7 @@ class RolloutBuffer(object):
         Generalized Advantage Expectation (GAE)를 계산 후, 버퍼에 저장
 
             Inputs:
-                next_value: predicted next q value
+                next_value: predicted next q value at last step
                 use_gae: whether use gae or not
                 gamma: discount factor
                 lam: gae lambda factor
@@ -203,16 +211,18 @@ class RolloutBuffer(object):
                 verbose : logging 여부
         """
         rollouts = self.rollouts
-        num_envs = self.mini_step_size * self.num_mini_step
-        batch_size = num_envs * rollouts
+        num_data_per_rollout = self.mini_step_size * self.num_rollout_blocks
+        batch_size = num_data_per_rollout * rollouts
         batch_begin = self.mini_step_size * rollouts if self.first_use_to_eval else 0
         assert batch_size >= num_mini_batch, (
             "PPO requires the number of processes ({}) "
             "* number of steps ({}) = {} "
             "to be greater than or equal to the number of PPO mini batches ({})."
-            "".format(num_envs, rollouts, num_envs * rollouts,
+            "".format(num_data_per_rollout, rollouts, num_data_per_rollout * rollouts,
                       num_mini_batch))
-        idx = [i for i in range(batch_begin, batch_size) if self.masks[i // num_envs, i % num_envs]]
+        # i with // 연산 : 
+        # i with % 연산 :
+        idx = [i for i in range(batch_begin, batch_size) if self.masks[i // num_data_per_rollout, i % num_data_per_rollout]]
         # idx = range(batch_size)
         if verbose:
             logging.info(f"actual-batch-size: {len(idx)}/{batch_size - batch_begin}")
@@ -293,7 +303,7 @@ class CoMappingRolloutBuffer(RolloutBuffer):
         if self.step == 0:
             ll, lh = l-self.mini_step_size, h-self.mini_step_size
             if lh == 0:
-                lh = self.mini_step_size * self.num_mini_step
+                lh = self.mini_step_size * self.num_rollout_blocks
             self.extras[0][l:h].copy_(self.extras[-1][ll:lh])
         self.extras[self.step + 1][l:h].copy_(extras)
         super(CoMappingRolloutBuffer, self).insert(obs, rec_states, actions,

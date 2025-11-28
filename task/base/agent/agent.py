@@ -31,7 +31,7 @@ class Agent:
         if mode == "train":
             self.model.train()
         elif mode == "eval":
-            self.model.eval()
+            self.model.eval() 
 
     @abstractmethod
     def act(self, states: torch.Tensor) -> torch.Tensor:

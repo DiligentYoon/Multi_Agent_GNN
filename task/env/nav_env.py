@@ -186,7 +186,7 @@ class NavEnv(Env):
     def _get_rewards(self):
         """
         """
-        pass
+        return torch.tensor(1.0, dtype=torch.float32, device=self.device)
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -208,7 +208,7 @@ class NavEnv(Env):
 
         # ---- Truncated 계산 -----
         timeout = self.num_step >= self.max_episode_steps - 1
-        truncated = np.full((self.num_agent, 1), timeout, dtype=np.bool_)
+        truncated = np.full(1, timeout, dtype=np.bool_)
 
         # ---- Terminated 계산 ----
         cells = self.map_info.world_to_grid_np(self.robot_locations)
@@ -242,7 +242,7 @@ class NavEnv(Env):
                 self.is_collided_drone[agent_idx] = True
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
-        terminated = self.is_collided_obstacle | self.is_collided_drone | reached_goal
+        terminated = np.any(self.is_collided_obstacle | self.is_collided_drone | reached_goal)
 
         return terminated, truncated, reached_goal
 
