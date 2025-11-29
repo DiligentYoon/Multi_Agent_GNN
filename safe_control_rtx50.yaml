@@ -1,0 +1,56 @@
+name: safe_control
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  # --- 1. 핵심 환경 구성 ---
+  - python=3.10
+  - pip
+
+  # --- 2. PyTorch 및 CUDA ---
+  # Conda를 통해 설치하여 안정성 확보 -> RTX50 시리즈와 호환되는 최신형 CUDA 및 Pytorch는 Conda 설치를 아직 지원 안하는 듯
+  # - pytorch::pytorch
+  # - pytorch::torchvision
+  # - pytorch::torchaudio
+  # - pytorch::pytorch-cuda=12.8
+
+  # --- 3. 핵심 과학 계산 및 GNN 라이브러리 ---
+  # Conda가 Python 3.10에 맞는 최적의 호환 버전을 찾아 설치
+  - numpy
+  - scipy>=1.11
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - torch-geometric # PyTorch Geometric
+  - cvxpy>=1.4
+  - ecos
+  - scs
+  - pyyaml
+  - tqdm
+  - imageio
+  
+  # --- 4. Pip으로 설치할 패키지들 ---
+  # Conda에 없거나, Pip 설치가 더 일반적인 패키지
+  - pip:
+    - casadi
+    - ray[rllib]
+    - wandb
+    - fastapi
+    - uvicorn[standard]
+    - tensorboard
+
+    # 의존성 문제 때문에, 설치 X
+    # - git+https://github.com/cvxgrp/diffcp.git
+    # - git+https://github.com/cvxgrp/cvxpylayers.git
+    # - --index-url https://download.pytorch.org/whl/cu128
+    # - torch==2.7.0
+    # - torchvision==0.22.0
+    # - torchaudio
+
+    # 환경 패키지 설치 이후에 별도로 수행 
+    # 1. pip install torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
+    # 2. pip install git+https://github.com/cvxgrp/cvxpylayers.git
+    # 3. pip install git+https://github.com/cvxgrp/diffcp.git
+    
