@@ -193,12 +193,12 @@ class NavEnv(Env):
         coeff = self.cfg.reward_weights
         # Exploration Reward
         explored_region = torch.nonzero(self.obs_manager.global_map[4, :, :]).shape[0]
-        explored_reward = coeff["explored"] * (explored_region - self.prev_explored_region) / self.prev_explored_region
+        explored_reward = coeff["exploration"] * (explored_region - self.prev_explored_region) / self.prev_explored_region
         self.prev_explored_region = explored_region
         # Per-step Penalty
         per_step_penalty = -coeff["per_step"]
         # Success Event Reward
-        success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
+        success_reward = coeff["success"] * np.astype(np.any(self.is_success), np.float32)
         # Connectivity Penalty
         # 샘플링된 Point에서 최단거리가 d_max보다 크면 페널티
 
