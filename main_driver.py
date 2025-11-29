@@ -127,7 +127,7 @@ def main(cfg: dict):
         global_step += rollout
 
         # Tensorboard Logging and Checkpointing
-        if iteration % cfg['agent']['experiment']['log_interval'] == 0 and len(value_losses) > 0:
+        if iteration % cfg['agent']['experiment']['write_interval'] == 0 and len(value_losses) > 0:
             mean_v_loss = np.mean(value_losses)
             mean_a_loss = np.mean(action_losses)
             mean_d_entropy = np.mean(dist_entropies)
