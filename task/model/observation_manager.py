@@ -163,8 +163,8 @@ class ObservationManager:
         dist_input = torch.zeros((self.num_robots, self.global_map_h, self.global_map_w))
         obstacle = self.global_map[0, :, :].bool()
 
-        rows = obstacle.any(0).cpu().numpy()
-        cols = obstacle.any(1).cpu().numpy()
+        rows = obstacle.any(1).cpu().numpy()
+        cols = obstacle.any(0).cpu().numpy()
         obstacle = obstacle.cpu()
 
         for i in range(self.num_robots):
@@ -181,7 +181,7 @@ class ObservationManager:
         for i in range(self.num_robots):
             agent_cell_pos = self.world_to_grid_np(self.global_pose[i, :2]).reshape(-1)
             dist_input[i, agent_cell_pos[1], agent_cell_pos[0]] = 4
-        dist_input = -nn.MaxPool2d(4)(-dist_input)
+        dist_input = -nn.MaxPool2d(self.pooling_downsampling)(-dist_input)
         dist_input[dist_input > 4] = 4
         global_input = torch.cat((global_input, dist_input), dim=0) # dim: [8 + Num_Agent, H, W]
 

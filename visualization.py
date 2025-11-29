@@ -73,7 +73,7 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
     inflated_map = inflate_obstacles_viz(maps, inflation_radius_cells=3)
     ax_gt.clear(); ax_belief.clear()
     ax_gt.imshow(maps.gt, cmap=GT_CMAP, norm=GT_NORM, origin='upper')
-    ax_belief.imshow(inflated_map, cmap=BELIEF_CMAP, norm=BELIEF_NORM, origin='upper')
+    ax_belief.imshow(maps.belief_frontier, cmap=BELIEF_CMAP, norm=BELIEF_NORM, origin='upper')
 
     def world_to_img(x, y):
         row, col = maps.world_to_grid(x, y)
@@ -170,14 +170,15 @@ def inflate_obstacles_viz(map_info, inflation_radius_cells: int = 5) -> np.ndarr
     """
     Belief map의 장애물 팽창
     """
-    belief_map = map_info.belief
+    # belief_map = map_info.belief
+    frontier_map = map_info.belief_frontier
     map_mask = map_info.map_mask
     
     if inflation_radius_cells <= 0:
-        return np.copy(belief_map)
+        return np.copy(frontier_map)
         
     # 1. 장애물만 1로 표시된 이진 맵 생성
-    obstacle_mask = (belief_map == map_mask["occupied"])
+    obstacle_mask = (frontier_map == map_mask["occupied"])
 
     # 2. 팽창에 사용할 구조 요소(커널) 생성
     # inflation_radius_cells가 5이면 11x11 크기의 정사각형 커널
@@ -188,7 +189,7 @@ def inflate_obstacles_viz(map_info, inflation_radius_cells: int = 5) -> np.ndarr
     dilated_obstacle_mask = binary_dilation(obstacle_mask, structure=structure)
     
     # 4. 원본 맵에 팽창된 장애물 영역을 덮어쓰기
-    inflated_map = np.copy(belief_map)
+    inflated_map = np.copy(frontier_map)
     inflated_map[dilated_obstacle_mask] = INFLATE
     
     return inflated_map

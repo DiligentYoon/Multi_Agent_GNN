@@ -411,7 +411,9 @@ class RL_ActorCritic(nn.Module):
         if base_kwargs is None:
             base_kwargs = {}
 
-        self.network = GNN(obs_shape, base_kwargs.get('num_gnn_layer') * ['self', 'cross'], base_kwargs.get('use_history'), base_kwargs.get('ablation'))
+        self.network = GNN(obs_shape, 
+                           base_kwargs.get('num_gnn_layer') * ['self', 'cross'], 
+                           base_kwargs.get('use_history'), base_kwargs.get('ablation'))
     
         assert action_space.__class__.__name__ == "Box"
         self.dist = MultiHeatmap()

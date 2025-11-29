@@ -1,7 +1,7 @@
 
 ray:
   num_cpus: 6
-  num_workers: 6
+  num_workers: 1
 
 # Environment Settings
 env:
@@ -58,7 +58,7 @@ agent:
   mini_batch_size: 4
   max_batch_size: -1
   epoch: 4
-  num_gae_block: 4
+  num_gae_block: 1
 
   discount_factor: 0.99
   gae_lambda: 0.95
@@ -73,13 +73,13 @@ agent:
   policy_loss_coef: 1.0
 
   buffer:
-    rollout: 4
+    rollout: 12
 
   experiment:
     directory: "MARL"
     experiment_name: ""
-    write_interval: auto
-    checkpoint_interval: auto
+    write_interval: 30
+    checkpoint_interval: 100
 
 model:
   

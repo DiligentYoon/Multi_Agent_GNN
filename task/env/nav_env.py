@@ -107,7 +107,6 @@ class NavEnv(Env):
         self.agent_paths = [None] * self.num_agent
         self.agent_path_targets = [None] * self.num_agent
 
-
         return obs, state, info
     
     
@@ -185,8 +184,25 @@ class NavEnv(Env):
 
     def _get_rewards(self):
         """
+        Reward 계산 수행
+
+            1. Exploration Reward   : PBRS Formulation으로 Progress Reward 계산
+            2. Per-step Penalty     : 최대한 빠른 탈출을 위해, step당 페널티를 부여
+            3. Success Event Reward : Goal Point 도착 시 Event로 발생하는 Reward
         """
-        return torch.tensor(1.0, dtype=torch.float32, device=self.device)
+        coeff = self.cfg.reward_weights
+        # Exploration Reward
+        explored_region = torch.nonzero(self.obs_manager.global_map[4, :, :]).shape[0]
+        explored_reward = coeff["explored"] * (explored_region - self.prev_explored_region) / self.prev_explored_region
+        self.prev_explored_region = explored_region
+        # Per-step Penalty
+        per_step_penalty = -coeff["per_step"]
+        # Success Event Reward
+        success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
+        # Connectivity Penalty
+        # 샘플링된 Point에서 최단거리가 d_max보다 크면 페널티
+
+        return explored_reward + per_step_penalty + success_reward
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -216,6 +232,7 @@ class NavEnv(Env):
 
         # 목표 도달 유무 체크
         reached_goal = (self.map_info.gt[rows, cols] == self.map_info.map_mask["goal"]).reshape(-1, 1)
+        self.is_success = reached_goal
 
         # 맵 경계 체크
         H, W = self.map_info.H, self.map_info.W
@@ -254,6 +271,8 @@ class NavEnv(Env):
         if reset:
             self.obs_manager.init_map_and_pose(cell_pos=self.map_info.world_to_grid_np(self.robot_locations), 
                                                cartesian_pos=self.robot_locations)
+            
+            self.prev_explored_region = np.nonzero(self.map_info.belief != self.map_info.map_mask["unknown"])[0].shape[0]
         # Global Frontier Marking
         self.map_info.belief_frontier = global_frontier_marking(self.map_info)
 
@@ -265,8 +284,6 @@ class NavEnv(Env):
         self.obs_manager.update_global(self.robot_locations, binary_obstacle, binary_frontier, binary_explored, binary_explorable)
 
         # ====================== TODO: This part is deleted later. Only for test =======================
-        total_local_regions = []
-        total_local_scores = []
         frontier_cells = [[] for _ in range(self.num_agent)]
         for i in range(self.num_agent):
             local_frontiers, frontiers_cell = self.detect_frontier(agent_id=i)
@@ -291,42 +308,13 @@ class NavEnv(Env):
         self.root_mask[root_id] = 1
         self.connectivity_graph.update_and_compute_mst(self.robot_locations, root_id)
 
-
-        # # 1) Global KD-Tree Valid Node 선택 & 점수 할당
-        # regions = self.global_kd_tree.leaves
-        # valid_regions = self.global_kd_tree.update_node_states(self.map_info, self.robot_locations)
-        # # 2) Local KD-Tree 빌드 & 점수 할당
-        # for region in valid_regions:
-        #     local_regions, local_scores = split_and_score_local_region(region.bounds, self.robot_locations, self.map_info)
-        #     total_local_regions.extend(local_regions)
-        #     total_local_scores.extend(local_scores)
-        # # 3) Local Region Clustering w.r.t each score
-        # if total_local_regions:
-        #     cluster_infos = local_region_clustering(total_local_regions, total_local_scores)
-        # else:
-        #     # 예외 처리 필요
-        #     raise ValueError("No valid local regions found.")
-        # # 4) Target Point Generation
-        # targets_rc, targets_prob, valid_cluster_ids = sample_k_targets_in_multi_regions_value(self.map_info, 
-        #                                                                                       cluster_infos,
-        #                                                                                       k=self.num_agent*3, 
-        #                                                                                       rng=self.seed)
-        # # 5) Point Allocation by Hungarian algorithms
-        # assigned_rc = assign_targets_hungarian(self.map_info, self.robot_locations, targets_rc, self.num_agent)
-        # # 6) Memory for cascade system
-        # self.regions = regions
-        # self.valid_regions = valid_regions
-        # self.assigned_rc = np.array(assigned_rc)
-
         # =================================================================================================
-
 
     def _update_infos(self):
         infos = copy.deepcopy(self.infos)
         infos["additional_obs"] = self.obs_manager.global_info
 
         return infos
-
 
 
     # =========== Auxilary Functions =============

@@ -27,6 +27,10 @@ class NavEnvCfg(EnvCfg):
         self.max_agents = self.num_agent
 
         # Reward Info
-        self.reward_weights = {}
+        self.reward_weights = {
+            "exploration": 1.0,
+            "success": 5.0,
+            "per_step": -0.1
+        }
 
 
