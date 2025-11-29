@@ -1,46 +1,41 @@
 name: safe_control
 channels:
+  - conda-forge  # 넓은 범위의 패키지를 위해 먼저 배치
   - pytorch
   - nvidia
-  - conda-forge
   - defaults
 dependencies:
   # --- 1. 핵심 환경 구성 ---
   - python=3.10
   - pip
 
-  # --- 2. PyTorch 및 CUDA ---
+  # --- 2. PyTorch 및 CUDA (변경 없음) ---
   - pytorch::pytorch
   - pytorch::torchvision
   - pytorch::torchaudio
   - pytorch::pytorch-cuda=12.1
 
-  # --- 3. 핵심 과학 계산 및 GNN 라이브러리 ---
-  # Conda가 Python 3.10에 맞는 최적의 호환 버전을 찾아 설치
+  # --- 3. 핵심 과학 계산 및 GNN 라이브러리 (변경 없음) ---
   - numpy
   - scipy>=1.11
   - pandas
   - matplotlib
   - scikit-learn
-  - torch-geometric # PyTorch Geometric
+  - torch-geometric
   - cvxpy>=1.4
   - ecos
   - scs
   - pyyaml
   - tqdm
   - imageio
-  
+
   # --- 4. Pip으로 설치할 패키지들 ---
   # Conda에 없거나, Pip 설치가 더 일반적인 패키지
   - pip:
+    - gymnasium  # ray나 rllib가 의존하는 패키지를 Conda-Forge를 통해 명시적으로 설치
     - casadi
-    - ray[rllib]
+    - ray[rllib] # rllib 의존성이 복잡하므로 Pip으로 유지
     - wandb
     - fastapi
     - uvicorn[standard]
     - tensorboard
-
-    # 환경 패키지 설치 이후에 별도로 수행 
-    # 1. pip install git+https://github.com/cvxgrp/cvxpylayers.git
-    # 2. pip install git+https://github.com/cvxgrp/diffcp.git
-    
