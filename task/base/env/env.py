@@ -229,7 +229,7 @@ class Env():
                 on_physics_step(self)
 
         # Done 신호 생성
-        self.num_step += 1
+        self.num_step += self.cfg.decimation
         self.termination_buf, self.truncation_buf, self.reached_goal = self._get_dones()
 
         # 추가정보 Infos 업데이트

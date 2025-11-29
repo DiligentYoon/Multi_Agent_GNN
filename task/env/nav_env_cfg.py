@@ -18,7 +18,7 @@ class NavEnvCfg(EnvCfg):
 
         # Episode Information
         self.decimation = 20
-        self.max_episode_steps = 1000
+        self.max_episode_steps = 800
 
         # Controller Cfg
         self.d_conn = 0.5
