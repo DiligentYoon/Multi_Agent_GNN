@@ -244,7 +244,7 @@ class Env():
 
         # Tensor 변환
         if not isinstance(self.reward_buf, torch.Tensor):
-            self.reward_buf = torch.tensor(self.reward_buf, dtype=self.reward_buf.dtype).to(self.device)
+            self.reward_buf = torch.tensor(self.reward_buf, dtype=torch.float32).to(self.device)
         if not isinstance(self.termination_buf, torch.Tensor):
             self.termination_buf = torch.tensor(self.termination_buf, dtype=torch.bool).to(self.device)
         if not isinstance(self.truncation_buf, torch.Tensor):
