@@ -24,8 +24,6 @@ class Agent:
         self.model = model
         self.cfg = cfg if cfg is not None else {}
         self.device = device
-        # A dictionary to register modules for checkpointing by the driver
-        self.checkpoint_modules = {}
     
     def set_running_mode(self, mode: str):
         if mode == "train":

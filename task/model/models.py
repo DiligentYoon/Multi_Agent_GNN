@@ -424,6 +424,7 @@ class RL_ActorCritic(nn.Module):
 
         self.model_type = model_type
 
+
     @property
     def is_recurrent(self):
         return self.network.is_recurrent
@@ -443,6 +444,7 @@ class RL_ActorCritic(nn.Module):
         else:
             return self.network(inputs, rnn_hxs, masks, extras)
 
+
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
         
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
@@ -456,6 +458,7 @@ class RL_ActorCritic(nn.Module):
         action_log_probs = dist.log_probs(action)
 
         return value, action, action_log_probs, rnn_hxs, actor_features
+
 
     def get_value(self, inputs, rnn_hxs, masks, extras=None):
         value, actor_features, _ = self(inputs, rnn_hxs, masks, extras)
@@ -471,6 +474,7 @@ class RL_ActorCritic(nn.Module):
 
         return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
 
+
     def load(self, path, device):
         self.actor_optimizer = torch.optim.Adam(set(filter(lambda p: p.requires_grad,
             self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,
@@ -484,11 +488,20 @@ class RL_ActorCritic(nn.Module):
         self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
         del state_dict
 
+
     def load_critic(self, path, device):
         state_dict = torch.load(path, map_location=device)['network']
         self.network.critic.load_state_dict({k.replace('critic.', ''):v for k,v in state_dict.items() if 'critic' in k})
         # self.network.actor.load_state_dict({k.replace('actor.', ''):v for k,v in state_dict.items() if 'actor' in k})
         del state_dict
+
+
+    def get_policy_data(self):
+        """
+        Returns the state of the agent for checkpointing.
+        """
+        return self.network.actor.state_dict()
+
 
     def save(self, path):
         state = {

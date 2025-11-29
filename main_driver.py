@@ -3,7 +3,6 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
-
 import sys
 if sys.platform == "win32":
     try:
@@ -21,15 +20,18 @@ import yaml
 import datetime
 import numpy as np
 import collections
+import gymnasium as gym
 
 from torch.utils.tensorboard import SummaryWriter
 
-from task.env.cbf_env import CBFEnv
+from collections import deque
+from typing import List
+from task.env.nav_env import NavEnv
 from task.agent.sac import SACAgent
-from task.models.models import ActorGaussianNet, CriticDeterministicNet, GNN_Feature_Extractor, DifferentiableCBFLayer
-from task.models.hgat import HierarchicalGAT
-from task.worker.off_policy_worker import OffPolicyWorker
-from task.buffer.random_buffer import RandomBuffer
+from task.worker.rolloutworker import RolloutWorker
+from task.agent.ppo import Agent, PPOAgent
+from task.model.models import RL_ActorCritic
+from task.buffer.rolloutbuffer import RolloutBuffer, CoMappingRolloutBuffer
 
 
 
@@ -50,12 +52,11 @@ class MainDriver:
         self.cfg = cfg
         self.timesteps = self.cfg["train"]["timesteps"]
         self.start_time = datetime.datetime.now().strftime("%y-%m-%d_%H-%M-%S")
-        
+        # --- Ray Processor ---
         ray.init(num_cpus=self.cfg['ray']['num_cpus'])
         print(f"Ray initialized with {self.cfg['ray']['num_cpus']} CPUs.")
-
+        # --- Device ---
         self.device = torch.device(self.cfg['env']['device'])
-        
         # --- Experiment Directory and Logging ---
         self.experiment_dir = os.path.join("results", f"{self.start_time}_{self.cfg['agent']['experiment']['directory']}")
         self.writer = SummaryWriter(log_dir=self.experiment_dir)
@@ -70,40 +71,21 @@ class MainDriver:
         self.cumulative_metrics = {}
         print(f"TensorBoard logs will be saved to: {self.experiment_dir}")
 
-        # --- Environment Info (for model dimensions) ---
-        # Create a temporary env to get observation and action dimensions
-        temp_env = CBFEnv(episode_index=0, cfg=self.cfg['env'])
-        obs_dim = temp_env.cfg.num_obs
-        state_dim = temp_env.cfg.num_state
-        action_dim = temp_env.cfg.num_act
-        num_agents = self.cfg['env']['num_agent']
-
-        # Setting CBF Constraints Variables from Env
-        self.cfg['model']['safety']['a_max'] = temp_env.cfg.max_acceleration
-        self.cfg['model']['safety']['w_max'] = temp_env.cfg.max_yaw_rate
-        self.cfg['model']['safety']['d_max'] = temp_env.cfg.d_max
-        self.cfg['model']['safety']['d_obs'] = temp_env.cfg.d_obs
-        self.cfg['model']['safety']['d_safe'] = temp_env.cfg.d_safe
-        self.cfg['model']['safety']['max_agents'] = temp_env.cfg.max_agents
-        self.cfg['model']['safety']['max_obs'] = temp_env.cfg.max_obs
+        # --- Environment Info & Model and Agent & Buffer ---
+        temp_env = NavEnv(episode_index=0, device=self.device, cfg=self.cfg['env'])
+        num_agents = cfg['env']['num_agent']
+        pr = temp_env.cfg.pooling_downsampling_rate
+        observation_space = gym.spaces.Box(0, 1, (8 + num_agents, temp_env.map_info.H // pr, temp_env.map_info.W // pr), dtype='uint8')
+        action_space = gym.spaces.Box(0, (temp_env.map_info.H // pr) * (temp_env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
+        actor_critic_model      = self.create_model(cfg['model'], observation_space, action_space, self.device)
+        self.master_agent, self.buffer = self.create_agent(cfg['agent'], actor_critic_model, num_agents,
+                                                           cfg['train']['eval_freq'], observation_space, action_space, self.device)
         del temp_env
 
-        # --- Centralized Components ---
-        # 1. Master Agent (holds the master networks and optimizers)
-        models = self._create_models(obs_dim, state_dim, action_dim)
-        self.master_agent = SACAgent(num_agents=num_agents,
-                                     models=models,
-                                     device=self.device,
-                                     cfg=self.cfg['agent'])
-        print("[INFO] Master Agent created.")
-
-        # 2. Replay Buffer
-        buffer_size = self.cfg['agent']['buffer']['replay_size']
-        self.replay_buffer = RandomBuffer(buffer_size)
-        print(f"Replay buffer created with max size {buffer_size}.")
+        print("[INFO] Master Agent and Buffer created.")
 
         # --- Worker Creation for Parallel Working ---
-        self.workers = [OffPolicyWorker.remote(worker_id=i, 
+        self.workers = [RolloutWorker.remote(worker_id=i, 
                                              env_cfg=self.cfg['env'], 
                                              agent_cfg=self.cfg['agent'],
                                              model_cfg=self.cfg['model']) for i in range(self.cfg['ray']['num_workers'])]
@@ -121,53 +103,79 @@ class MainDriver:
 
 
 
-    def _create_models(self, obs_dim, state_dim, action_dim) -> dict:
-        """Creates the policy and critic models."""
-        model_cfg = self.cfg['model']
+    def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> RL_ActorCritic:
+        """
+        Helper function to create models based on the config.
 
-        # Feature Extractor
-        # local_feature_extractor_v = GNN_Feature_Extractor(state_dim, model_cfg['feature_extractor'], "local")
-        # local_feature_extractor_p = GNN_Feature_Extractor(obs_dim, model_cfg['feature_extractor'], "local")
-        local_feature_extractor_v = HierarchicalGAT(cfg=model_cfg['feature_extractor'], device=self.device)
-        local_feature_extractor_p = HierarchicalGAT(cfg=model_cfg['feature_extractor'], device=self.device)
+            Inputs:
+                cfg: Model Configuration Dictionary
+                observation_space : observation with respect to specific env
+                action_space : action with repsect to specific env
+                device : ["cpu", "cuda"]
+            
+            Returns:
+                actor_critic : Actor Critic Model [policy_net, critic_net]
+        """
+        model_cfg = cfg
+        for key, value in model_cfg.items():
+            if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
+                model_cfg[key] = float(value)
 
-        # Policy
-        actor_type = model_cfg['actor']['type']
-        if actor_type == "Gaussian":
-            policy_input_dim = model_cfg['feature_extractor']['common']['hidden']
-            policy = ActorGaussianNet(policy_input_dim, action_dim, self.device, model_cfg['actor'])
+        actor_critic = RL_ActorCritic(observation_space.shape, action_space,
+                                    model_type=model_cfg['model_type'],
+                                    base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                                'use_history': model_cfg['use_history'],
+                                                'ablation': model_cfg['ablation']},
+                                    lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                    eps=model_cfg['eps']).to(device)
+        return actor_critic
+
+
+    def create_agent(cfg: dict, model: RL_ActorCritic, num_agents: int, eval_freq: int, 
+                    observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> tuple[Agent, RolloutBuffer]:
+        """
+        Helper function to create agent and corresponding buffer based on the config.
+
+            Inputs:
+                cfg: Agent Configuration Dictionary
+                models: Actor Critic Model [policy_net, critic_net]
+            
+            Returns:
+                agent : on policy (PPO) or off policy (SAC)
+        """
+        agent_cfg = cfg
+        buffer_cfg = agent_cfg["buffer"]
+        algorithm = agent_cfg.get("alg", "PPO")
+        if algorithm == "PPO":
+            buffer = CoMappingRolloutBuffer(buffer_cfg["rollout"], 
+                                            num_envs=1, 
+                                            eval_freq=eval_freq,
+                                            num_repeats=agent_cfg["num_gae_block"],
+                                            num_agents=1, # Centralized Network
+                                            obs_shape=observation_space.shape,
+                                            action_space=action_space,
+                                            rec_state_size=model.rec_state_size,
+                                            extras_size=num_agents * 6
+                                            ).to(device)
+            agent = PPOAgent(model, device, agent_cfg)
+        elif algorithm == "SAC":
+            raise ValueError("Not Buffer Implementation yet.")
+            agent = SACAgent()
         else:
-            ValueError("[INFO] TODO : we should construct the deterministic policy for MADDPG ...")
+            raise ValueError("Unvalid Algorithm Types.")
 
-        # Safety
-        safety = DifferentiableCBFLayer(cfg=model_cfg["safety"], device=torch.device('cpu')) # CPU 처리
+        return agent, buffer
 
-        # Centralized critic input dimension: state + agent actions
-        critic_input_dim = model_cfg['feature_extractor']['common']['hidden'] + action_dim
-        critic1 = CriticDeterministicNet(critic_input_dim, 1, self.device, model_cfg['critic'])
-        critic2 = CriticDeterministicNet(critic_input_dim, 1, self.device, model_cfg['critic'])
-        
-        return {"policy_feature_extractor": local_feature_extractor_p.to(device=self.device),
-                "value_feature_extractor": local_feature_extractor_v.to(device=self.device),
-                "policy": policy.to(device=self.device), 
-                "safety": safety,
-                "value_1": critic1.to(device=self.device), 
-                "value_2": critic2.to(device=self.device)}
 
     def train(self):
         """Main training loop."""
         print("=== Training Start ===")
 
-        current_weights = self.master_agent.get_checkpoint_data()
-        current_policy_weights = current_weights['policy']
-        currnet_policy_feature_extractor_weights = current_weights["policy_feature_extractor"]
-        
+        current_policy_weights = self.master_agent.model.get_policy_data()
         # Broadcast initial weights to all workers
         cpu_policy_weights = {k: v.cpu() for k, v in current_policy_weights.items()}
-        cpu_policy_feature_extractor_weights = {k: v.cpu() for k, v in currnet_policy_feature_extractor_weights.items()}
         for worker in self.workers:
             worker.set_weights.remote(cpu_policy_weights, role="policy")
-            worker.set_weights.remote(cpu_policy_feature_extractor_weights, role="policy_feature_extractor")
 
         # Start the first batch of rollouts
         jobs = [worker.rollout.remote(i, self.curriculum_variables) for i, worker in enumerate(self.workers)]
@@ -318,7 +326,7 @@ class MainDriver:
 
 
 if __name__ == '__main__':
-    with open("config/cbf_test.yaml", 'r') as f:
+    with open("config/nav_ppo_cfg.yaml", 'r') as f:
         config = yaml.safe_load(f)
     
     driver = MainDriver(cfg=config)
