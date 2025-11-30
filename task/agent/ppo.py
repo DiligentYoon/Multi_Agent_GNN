@@ -50,7 +50,7 @@ class PPOAgent(Agent):
         if min(valid_advantages.shape) == 0:
             print('empty samples ... skip !')
             return 0, 0, 0
-        print('min/max/mean/med adv: {:.3f}/{:.3f}/{:.3f}/{:.3f}'.format(valid_advantages.min(), valid_advantages.max(), valid_advantages.mean(), valid_advantages.median()))
+        # print('min/max/mean/med adv: {:.3f}/{:.3f}/{:.3f}/{:.3f}'.format(valid_advantages.min(), valid_advantages.max(), valid_advantages.mean(), valid_advantages.median()))
         advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-6)
         value_loss_epoch = 0
         action_loss_epoch = 0
@@ -61,10 +61,14 @@ class PPOAgent(Agent):
                                                     self.mini_batch_size, 
                                                     self.max_batch_size, 
                                                     self.rotation_augmentation, 
-                                                    ds=self.model.network.downscaling)
+                                                    ds=self.model.network.downscaling,
+                                                    verbose=True)
 
             for sample in data_generator:
                 # Reshape to do in a single forward pass for all steps
+                for i in range(sample['obs'].shape[0]):
+                    if torch.nonzero(sample['obs'][i, 1, :, :]).shape[0] <= torch.max(sample['actions'][i]):
+                        raise ValueError("Action exceeds distribution")
                 values, action_log_probs, dist_entropy, _, action_feature = \
                     self.model.evaluate_actions(
                         sample['obs'], sample['rec_states'],

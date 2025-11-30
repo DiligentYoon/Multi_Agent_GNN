@@ -28,7 +28,7 @@ class MultiCategorical:
         return torch.stack([d.sample() for d in self.dist])
 
     def mode(self):
-        return torch.stack([d.mode().squeeze(-1) for d in self.dist])
+        return torch.stack([d.mode.squeeze(-1) for d in self.dist])
 
     def log_probs(self, actions):
         assert actions.shape == (self.batch_size, self.multi)

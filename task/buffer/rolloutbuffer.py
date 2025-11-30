@@ -173,7 +173,7 @@ class RolloutBuffer(object):
                         gamma, 
                         lam):
         """
-        Generalized Advantage Expectation (GAE)를 계산 후, 버퍼에 저장
+        모든 스텝에 대하여 Generalized Advantage Expectation (GAE)를 계산 후, 버퍼에 저장
 
             Inputs:
                 next_value: predicted next q value at last step
@@ -220,8 +220,6 @@ class RolloutBuffer(object):
             "to be greater than or equal to the number of PPO mini batches ({})."
             "".format(num_data_per_rollout, rollouts, num_data_per_rollout * rollouts,
                       num_mini_batch))
-        # i with // 연산 : 
-        # i with % 연산 :
         idx = [i for i in range(batch_begin, batch_size) if self.masks[i // num_data_per_rollout, i % num_data_per_rollout]]
         # idx = range(batch_size)
         if verbose:

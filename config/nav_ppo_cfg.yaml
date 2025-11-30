@@ -1,7 +1,7 @@
 
 ray:
   num_cpus: 6
-  num_workers: 6
+  num_workers: 3
 
 # Environment Settings
 env:
@@ -43,7 +43,7 @@ env:
     gamma_a2: 1.5
     gamma_conn1: 1.5
     gamma_conn2: 1.5
-    w_slack: 5000
+    w_slack: 1000
 
   curriculum:
     demo:
@@ -63,17 +63,17 @@ agent:
   discount_factor: 0.99
   gae_lambda: 0.95
 
-  rotation_augmentation: 1
+  rotation_augmentation: 0
 
   clip_ratio: 0.2
   grad_norm_clip: 0.5
 
   value_loss_coef: 1.0
-  entropy_loss_coef: 0.1
+  entropy_loss_coef: 0.005
   policy_loss_coef: 1.0
 
   buffer:
-    rollout: 12
+    rollout: 48
 
   experiment:
     directory: "MARL"
@@ -90,8 +90,8 @@ model:
   ablation: false
 
   # Optimizer Paramters
-  actor_lr: 1e-5
-  critic_lr: 1e-5
+  actor_lr: 5e-4
+  critic_lr: 5e-4
   eps: 1e-6
     
 # Training Settings

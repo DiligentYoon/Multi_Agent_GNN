@@ -105,39 +105,39 @@ class RolloutWorker:
 
 
         # Collect a rollout fragment of a fixed length.
-        episode_is_done = True
         for _ in range(self.rollout_fragment_length):
             # If the last episode was done, reset the environment.
-            if episode_is_done:
-                print(f"Worker {self.worker_id}: Resetting environment.")
-                last_obs, _, last_info = self.env.reset(episode_index=random.randint(0, 100))
-
-                # 초기 액션 세팅 + 스텝
+            if self.episode_is_done:
+                # print(f"Worker {self.worker_id}: Resetting environment.")
+                self.last_obs, _, self.last_info = self.env.reset(episode_index=random.randint(0, 100))
+            
+            # 버퍼에 초기 액션 세팅 + 스텝
+            if buffer.step == 0:
                 l = buffer.mini_step * buffer.mini_step_size
                 h = (buffer.mini_step + 1) * buffer.mini_step_size
-                buffer.obs[0][l:h].copy_(last_obs.view(1, *self.observation_space.shape))
-                buffer.extras[0][l:h].copy_(last_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate)
-
+                buffer.obs[0][l:h].copy_(self.last_obs.view(1, *self.observation_space.shape))
+                buffer.extras[0][l:h].copy_(self.last_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate)
+ 
                 ll, lh = l-buffer.mini_step_size, h-buffer.mini_step_size
                 if lh == 0:
                     lh = buffer.mini_step_size * buffer.num_rollout_blocks
-                # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (코드 처음에만 수행)
+                # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (reset시에만 수행)
                 buffer.obs[-1][ll:lh].copy_(buffer.obs[0][l:h])
                 buffer.rec_states[-1][ll:lh].copy_(buffer.rec_states[0][l:h])
                 buffer.extras[-1][ll:lh].copy_(buffer.extras[0][l:h])
 
-                last_rec_states = buffer.rec_states[0][l:h]
-                last_mask = buffer.masks[0][l:h]
+                self.last_rec_states = buffer.rec_states[0][l:h]
+                self.last_mask = buffer.masks[0][l:h]
 
             # print(f"[ Worker {self.worker_id} ] # of frontier at {buffer.step} step : { torch.nonzero(buffer.obs[buffer.step, 0, 1, :, :]).shape[0] }")
             
             with torch.no_grad():
                 values, actions, action_log_probs, \
                 rec_states, _ = self.agent.act(
-                    last_obs.view(1, *self.observation_space.shape),
-                    last_rec_states,
-                    last_mask,
-                    last_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate,
+                    self.last_obs.view(1, *self.observation_space.shape),
+                    self.last_rec_states,
+                    self.last_mask,
+                    self.last_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate,
                     deterministic=False
                 )
 
@@ -152,29 +152,29 @@ class RolloutWorker:
             )
 
             # Update state for the next step
-            last_obs = next_obs
-            last_info = next_info
-            last_mask = ~done
-            last_rec_states = rec_states
-            episode_is_done = done.item()
+            self.last_obs = next_obs
+            self.last_info = next_info
+            self.last_mask = ~done
+            self.last_rec_states = rec_states
+            self.episode_is_done = done.item()
         
         # --- After the loop, compute the value for the last state ---
         with torch.no_grad():
-            if episode_is_done:
+            if self.episode_is_done:
                 # If the episode ended, the value of the terminal state is 0.
                 next_value = torch.zeros(1, 1, device=self.device)
             else:
                 # If the episode was cut off, bootstrap from the last observation.
                 next_value = self.agent.model.get_value(
-                    last_obs.view(1, *self.observation_space.shape),
-                    last_rec_states,
-                    last_mask, # Should be 1 here as it's not a real 'done'
-                    extras=last_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate
+                    self.last_obs.view(1, *self.observation_space.shape),
+                    self.last_rec_states,
+                    self.last_mask, # Should be 1 here as it's not a real 'done'
+                    extras=self.last_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate
                 )[0]
         
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
         
-        print(f"Worker {self.worker_id}: Finished sampling fragment.")
+        # print(f"Worker {self.worker_id}: Finished sampling fragment.")
         return buffer
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import math
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from typing import List
@@ -121,7 +122,14 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
         for ax in (ax_gt, ax_belief):
             ax.scatter(fx, fy, s=50, c=color, marker='*')
         
-
+        # --- Target Candidates ---
+        # target_candidates_idx = torch.nonzero(env.obs_buf[1, :, :]).cpu().numpy()
+        # ds = env.cfg.pooling_downsampling_rate
+        # upscaled_id = target_candidates_idx * ds + ds // 2 # [row, col]
+        # target_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1)) # [rol, col] -> [col, row] -> [x, y]
+        # fx, fy = zip(*[world_to_img(x, y) for x, y in target_candidates_xy])
+        # for ax in (ax_gt, ax_belief):
+        #     ax.scatter(fx, fy, s=20, c=color, marker='x')
         
         # --- Path history ---
         path = viz_data["paths"][i]

@@ -104,12 +104,12 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
         print("Visualization is OFF.")
         
     # --- Output Directory & Writer & Checkpoint ---
-    os.makedirs(out_dir, exist_ok=True)
+    # os.makedirs(out_dir, exist_ok=True)
     print(f"Evaluation Results will be saved to: {out_dir}")
     start_time = datetime.datetime.now().strftime("%y-%m-%d_%H-%M-%S")
 
     experiment_dir = os.path.join("results", f"{start_time}_{cfg['agent']['experiment']['directory']}")
-    os.makedirs(experiment_dir, exist_ok=True)
+    # os.makedirs(experiment_dir, exist_ok=True)
     print(f"Training Results will be saved to {experiment_dir}")
 
     timesteps = cfg["train"]["timesteps"]
@@ -218,7 +218,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
                                                             rec_states,
                                                             mask,
                                                             info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
-                                                            deterministic=False)
+                                                            deterministic=True)
 
         # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
@@ -238,7 +238,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
             next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
         )
 
-        print(f'# of frontier : { torch.nonzero(next_obs[1, :, :]).shape[0] }')
+        print(f'# of frontier (obs) : { torch.nonzero(next_obs[1, :, :]).shape[0] }')
 
         # --- Record data for final plots (once per RL step) ---
         if visualize:
@@ -338,5 +338,5 @@ if __name__ == '__main__':
     # Run the test with visualization enabled
     run_simulation_test(config, 
                         steps=10, 
-                        visualize=False,
-                        load_file_path=None)
+                        visualize=True,
+                        load_file_path='results/25-11-30_10-54-29_MARL/checkpoints/agent_7200.pt')

@@ -193,7 +193,7 @@ class NavEnv(Env):
         coeff = self.cfg.reward_weights
         # Exploration Reward
         explored_region = torch.nonzero(self.obs_manager.global_map[4, :, :]).shape[0]
-        explored_reward = coeff["exploration"] * (explored_region - self.prev_explored_region) / self.prev_explored_region
+        explored_reward = coeff["exploration"] * (explored_region - self.prev_explored_region)
         self.prev_explored_region = explored_region
         # Per-step Penalty
         per_step_penalty = -coeff["per_step"]
