@@ -237,6 +237,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
             next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
         )
 
+        print(f"Reward : {reward.item():.2f}")
         print(f'# of frontier (obs) : { torch.nonzero(next_obs[1, :, :]).shape[0] }')
 
         # --- Record data for final plots (once per RL step) ---

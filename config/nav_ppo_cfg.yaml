@@ -69,12 +69,12 @@ agent:
   clip_ratio: 0.2
   grad_norm_clip: 0.5
 
-  value_loss_coef: 1.0
+  value_loss_coef: 0.5
   entropy_loss_coef: 0.005
-  policy_loss_coef: 1.0
+  policy_loss_coef: 10.0
 
   buffer:
-    rollout: 48
+    rollout: 36
 
   experiment:
     directory: "MARL"
@@ -83,7 +83,6 @@ agent:
     checkpoint_interval: 100
 
 model:
-  
   # Model Configuration
   model_type: gnn
   num_gnn_layer: 3

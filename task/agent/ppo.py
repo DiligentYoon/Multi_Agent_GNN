@@ -37,7 +37,7 @@ class PPOAgent(Agent):
         self.policy_loss_coef = self.cfg["policy_loss_coef"]
         
 
-        self.use_clipped_value_loss = True
+        self.use_clipped_value_loss = False
     
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
         
@@ -103,7 +103,6 @@ class PPOAgent(Agent):
                 else:
                     value_loss = 0.5 * (returns - values).pow(2).mean()
 
-                # print('a/v clip: {:.3f}/{:.3f}'.format(action_clip, value_clip))
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()

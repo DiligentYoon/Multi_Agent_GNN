@@ -83,6 +83,7 @@ def main(cfg: dict):
     total_timesteps = cfg['train']['timesteps']
     rollout = num_workers * cfg['agent']['buffer']['rollout']
     
+    per_step_reward = deque(maxlen=100)
     value_losses = deque(maxlen=100)
     action_losses = deque(maxlen=100)
     dist_entropies = deque(maxlen=100)
@@ -107,11 +108,12 @@ def main(cfg: dict):
         rollout_buffers = ray.get(rollout_futures)
 
         # Perform learning updates using the collected data
-        iter_v_loss, iter_a_loss, iter_d_entropy = 0, 0, 0
+        iter_v_loss, iter_a_loss, iter_d_entropy, iter_reward = 0, 0, 0, 0
         for buffer in rollout_buffers:
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer)
             
+            iter_reward += torch.sum(buffer.rewards).item() / rollout
             if value_loss > 0: # Assuming positive loss indicates a valid update
                 iter_v_loss += value_loss
                 iter_a_loss += action_loss
@@ -120,6 +122,7 @@ def main(cfg: dict):
         # Aggregate and log losses
         num_updates = len(rollout_buffers)
         if num_updates > 0:
+            per_step_reward.append(iter_reward / num_updates)
             value_losses.append(iter_v_loss / num_updates)
             action_losses.append(iter_a_loss / num_updates)
             dist_entropies.append(iter_d_entropy / num_updates)
@@ -128,13 +131,16 @@ def main(cfg: dict):
 
         # Tensorboard Logging and Checkpointing
         if iteration % cfg['agent']['experiment']['write_interval'] == 0 and len(value_losses) > 0:
+            mean_per_step_reward = np.mean(per_step_reward)
             mean_v_loss = np.mean(value_losses)
             mean_a_loss = np.mean(action_losses)
             mean_d_entropy = np.mean(dist_entropies)
             
             print(f"Global Step: {global_step}/{total_timesteps} | Iteration: {iteration}")
+            print(f"  Rewards : {mean_per_step_reward:.4f}")
             print(f"  Losses -> Value: {mean_v_loss:.4f}, Action: {mean_a_loss:.4f}, Entropy: {mean_d_entropy:.4f}")
             
+            writer.add_scalar('Reward/Per_step', mean_per_step_reward, global_step)
             writer.add_scalar('Loss/Value', mean_v_loss, global_step)
             writer.add_scalar('Loss/Action', mean_a_loss, global_step)
             writer.add_scalar('Loss/Entropy', mean_d_entropy, global_step)
@@ -146,7 +152,7 @@ def main(cfg: dict):
         
         # CLI Logging
         print(f"============= Learning Progress at Iteration {iteration} ==============")
-        print(f"Rewards : ")
+        print(f"Rewards : {iter_reward / num_updates:.2f}")
         print(f"Value Loss : {iter_v_loss / num_updates:.2f}")
         print(f"Policy Loss : {iter_a_loss / num_updates:.2f}")
 
