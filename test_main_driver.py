@@ -173,7 +173,6 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
             "paths": path_history,
             "obs_local": env_instance.obstacle_states,
             "connectivity_pairs": connectivity_pairs,
-            "target_assigned": env_instance.map_info.grid_to_world_np(np.flip(env_instance.assigned_rc)),
             "target_local": env_instance.cbf_infos["nominal"]["p_targets"],
             "connectivity_trajs": env_instance.connectivity_traj,
         }
@@ -337,6 +336,6 @@ if __name__ == '__main__':
     
     # Run the test with visualization enabled
     run_simulation_test(config, 
-                        steps=10, 
+                        steps=20, 
                         visualize=True,
-                        load_file_path='results/25-11-30_10-54-29_MARL/checkpoints/agent_7200.pt')
+                        load_file_path='results/25-11-30_18-08-54_MARL/checkpoints/agent_10800.pt')

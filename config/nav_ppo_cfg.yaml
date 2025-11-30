@@ -65,6 +65,7 @@ agent:
 
   rotation_augmentation: 0
 
+  value_clip_ratio: 0.2
   clip_ratio: 0.2
   grad_norm_clip: 0.5
 

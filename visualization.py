@@ -117,8 +117,9 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
             ax.scatter(fx, fy, s=50, c=color, marker='.', zorder=4, alpha=0.4)
 
         # --- Assigned Target ---
-        target_assigned_xy = viz_data["target_assigned"][i]
-        fx, fy = world_to_img(target_assigned_xy[0], target_assigned_xy[1])
+        assigned_rc = env.assigned_rc[i]
+        assigned_xy = env.map_info.grid_to_world_np(np.flip(assigned_rc))
+        fx, fy = world_to_img(assigned_xy[0, 0], assigned_xy[0, 1])
         for ax in (ax_gt, ax_belief):
             ax.scatter(fx, fy, s=50, c=color, marker='*')
         

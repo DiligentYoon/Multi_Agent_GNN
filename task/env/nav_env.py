@@ -128,12 +128,39 @@ class NavEnv(Env):
             downsampled_id = frontier_idx[cpu_action[i], :] # TODO: 매핑관계 validation [1, 2]
             self.history_action_map[downsampled_id[0], downsampled_id[1]] = 1
 
-            # 실제 Map Scale로 Up-Scaling 및 중앙 보정
+            # 실제 Map Scale로 Up-Scaling 및 유효성 검사
             ds = self.cfg.pooling_downsampling_rate
-            upscaled_id = downsampled_id * ds + ds // 2 # 업스케일 후, 중앙으로 가져오기
+            center_point = downsampled_id * ds + ds // 2  # 블록의 중앙 지점
+
+            # 해당 블록 내에서 실제 프론티어 셀들을 찾습니다.
+            r_start, c_start = downsampled_id * ds
+            r_end, c_end = r_start + ds, c_start + ds
+            
+            block_view = self.map_info.belief_frontier[r_start:r_end, c_start:c_end]
+            frontier_mask = self.map_info.map_mask["frontier"]
+            
+            relative_frontier_coords = np.argwhere(block_view == frontier_mask)
+
+            if relative_frontier_coords.size > 0:
+                # 프론티어 셀이 있다면, 블록 중앙에서 가장 가까운 프론티어 셀을 선택합니다.
+                # 절대 좌표로 변환
+                absolute_frontier_coords = relative_frontier_coords + np.array([r_start, c_start])
+                
+                # 중앙점과의 거리 계산
+                distances = np.linalg.norm(absolute_frontier_coords - center_point, axis=1)
+                
+                # 가장 가까운 프론티어 셀의 인덱스
+                closest_frontier_idx = np.argmin(distances)
+                
+                # 최종 타겟 할당
+                final_target_rc = absolute_frontier_coords[closest_frontier_idx]
+            else:
+                # 만약 해당 블록에 프론티어가 없다면 (이론상 드문 경우),
+                # 기존 로직(중앙점)을 폴백으로 사용합니다.
+                final_target_rc = center_point
 
             # 보정된 Target Point를 최종 할당
-            self.assigned_rc[i] = upscaled_id
+            self.assigned_rc[i] = final_target_rc
 
 
     def _apply_actions(self):
@@ -200,9 +227,9 @@ class NavEnv(Env):
         # Success Event Reward
         success_reward = coeff["success"] * np.astype(np.any(self.is_success), np.float32)
         # Connectivity Penalty
-        # 샘플링된 Point에서 최단거리가 d_max보다 크면 페널티
+        connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
-        return explored_reward + per_step_penalty + success_reward
+        return explored_reward + per_step_penalty + success_reward + connectivity_penalty
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -607,19 +634,19 @@ class NavEnv(Env):
             
 
             # ==== Path Planning ====
-            replan = False
+            replan = True
             current_path_cells = self.agent_paths[i]
             current_target_cell = self.agent_path_targets[i]
 
             # 1. 맨 처음이거나 경로가 없는 경우
-            if current_path_cells is None:
-                replan = True
-            # 2. 타겟 포인트가 바뀐 경우
-            elif not np.array_equal(end_cell, current_target_cell):
-                replan = True
-            # 3. 기존 경로가 더 이상 유효하지 않은 경우 (장애물 충돌)
-            elif not is_path_valid(self.map_info, np.array(current_path_cells)):
-                replan = True
+            # if current_path_cells is None:
+            #     replan = True
+            # # 2. 타겟 포인트가 바뀐 경우
+            # elif not np.array_equal(end_cell, current_target_cell):
+            #     replan = True
+            # # 3. 기존 경로가 더 이상 유효하지 않은 경우 (장애물 충돌)
+            # elif not is_path_valid(self.map_info, np.array(current_path_cells)):
+            #     replan = True
 
             if replan:
                 path_cells = astar_search(self.map_info,

@@ -27,6 +27,7 @@ class PPOAgent(Agent):
         self.rotation_augmentation = self.cfg["rotation_augmentation"]
         
         self.clip_ratio = self.cfg["clip_ratio"]
+        self.value_clip_ratio = self.cfg.get("value_clip_ratio", self.clip_ratio)
         self.discount_factor = self.cfg["discount_factor"]
         self.gae_lambda = self.cfg["gae_lambda"]
 
@@ -36,7 +37,7 @@ class PPOAgent(Agent):
         self.policy_loss_coef = self.cfg["policy_loss_coef"]
         
 
-        self.use_clipped_value_loss = False
+        self.use_clipped_value_loss = True
     
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
         
@@ -93,7 +94,7 @@ class PPOAgent(Agent):
                 if self.use_clipped_value_loss:
                     value_pred_clipped = value_preds + \
                                         (values - value_preds).clamp(
-                                            -self.clip_ratio, self.clip_ratio)
+                                            -self.value_clip_ratio, self.value_clip_ratio)
                     value_losses = (values - returns).pow(2)
                     value_losses_clipped = (value_pred_clipped
                                             - returns).pow(2)
