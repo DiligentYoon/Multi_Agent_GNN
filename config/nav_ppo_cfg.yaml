@@ -7,7 +7,7 @@ ray:
 env:
   seed: 42
   physics_dt: 0.1
-  device: "cuda"
+  device: "cuda:0"
   num_agent: 3
   max_velocity: 0.3
   max_yaw_rate: 1.0 # radians
