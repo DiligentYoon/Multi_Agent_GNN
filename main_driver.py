@@ -15,6 +15,7 @@ if sys.platform == "win32":
         pass
 
 import yaml
+import time
 import torch
 import numpy as np
 import datetime
@@ -110,7 +111,9 @@ def main(cfg: dict):
         rollout_buffers = ray.get(rollout_futures)
 
         # Perform learning updates using the collected data
+        t1 = time.time()
         iter_v_loss, iter_a_loss, iter_d_entropy, iter_reward = 0, 0, 0, 0
+        print(f"======== Starting Training Iteration {iteration} ========")
         for buffer in rollout_buffers:
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
@@ -120,7 +123,7 @@ def main(cfg: dict):
                 iter_v_loss += value_loss
                 iter_a_loss += action_loss
                 iter_d_entropy += dist_entropy
-        
+        t2 = time.time()
         # Aggregate and log losses
         num_updates = len(rollout_buffers)
         if num_updates > 0:
@@ -153,10 +156,11 @@ def main(cfg: dict):
             print(f"Checkpoint saved to {checkpoint_path}")
         
         # CLI Logging
-        print(f"============= Learning Progress at Iteration {iteration} ==============")
+        print(f"Time for train : {t2 - t1:.2f} sec")
         print(f"Rewards : {iter_reward / num_updates:.2f}")
         print(f"Value Loss : {iter_v_loss / num_updates:.2f}")
         print(f"Policy Loss : {iter_a_loss / num_updates:.2f}")
+        print(f"============= Learning Progress at Iteration {iteration} ==============")
 
     # --- Cleanup ---
     writer.close()

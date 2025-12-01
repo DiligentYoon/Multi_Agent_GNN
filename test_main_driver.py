@@ -137,10 +137,6 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     if load_file_path is not None:
         agent.model.load(os.path.join(os.getcwd(), load_file_path), device=device)
 
-    value_losses = deque(maxlen=100)
-    action_losses = deque(maxlen=100)
-    dist_entropies = deque(maxlen=100)
-
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
     fig, ax1, ax2 = None, None, None
@@ -340,4 +336,4 @@ if __name__ == '__main__':
     run_simulation_test(config, 
                         steps=30, 
                         visualize=True,
-                        load_file_path='results/25-11-30_22-51-23_MARL/checkpoints/agent_151200.pt')
+                        load_file_path='results/25-12-01_14-57-47_MARL/checkpoints/agent_15360.pt')
