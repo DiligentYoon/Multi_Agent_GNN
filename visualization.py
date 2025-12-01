@@ -42,6 +42,8 @@ GT_NORM = BELIEF_NORM
 
 AGENT_COLORS = ['#E6194B', '#4363D8', '#3CB44B', '#F58231', "#9D24C2", '#469990'] # Red, Blue, Green, Orange, Purple, Teal
 
+FRONTIER_COLORS = ["#FF0202", "#020303"]
+
 def local_to_world(robot_pos: np.ndarray, local_points: np.ndarray, yaw: float) -> np.ndarray:
     """Transforms points from the robot's local frame to world coordinates."""
     if local_points.ndim == 1:
@@ -157,14 +159,27 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
             for ax in (ax_gt, ax_belief):
                 ax.plot(xs, ys, '-', linewidth=2, color=color, alpha=0.8, zorder=3)
 
+        
     # --- Target Candidates ---
-    target_candidates_idx = torch.nonzero(env.obs_buf[1, :, :]).cpu().numpy()
     ds = env.cfg.pooling_downsampling_rate
+    target_candidates_idx = torch.nonzero(env.obs_buf[1, :, :]).cpu().numpy()
     upscaled_id = target_candidates_idx * ds + ds // 2 # [row, col]
     target_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1)) # [rol, col] -> [col, row] -> [x, y]
     fx, fy = zip(*[world_to_img(x, y) for x, y in target_candidates_xy])
     for ax in (ax_gt, ax_belief):
-        ax.scatter(fx, fy, s=1, c=AGENT_COLORS[0], marker='o')
+        ax.scatter(fx, fy, s=1, c=FRONTIER_COLORS[0], marker='o')
+
+    # --- Unvalid Candidates ---
+    for i in range(env.num_agent):
+        dist_features = env.obs_buf[8 + i, :, :]
+        unvalid_target_idx = target_candidates_idx[
+            torch.nonzero(dist_features[env.obs_buf[1, :, :] > 0] > 2).squeeze(-1).cpu().numpy()]
+        upscaled_id = unvalid_target_idx * ds + ds // 2
+        unvalid_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1))
+        fx, fy = zip(*[world_to_img(x, y) for x, y in unvalid_candidates_xy])
+        for ax in (ax_gt, ax_belief):
+            ax.scatter(fx, fy, s=1, color=FRONTIER_COLORS[1], marker='o')
+
 
     # --- Final Touches ---
     for ax in (ax_gt, ax_belief):

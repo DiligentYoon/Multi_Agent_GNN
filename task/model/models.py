@@ -313,9 +313,10 @@ class AttentionalGNN(nn.Module):
             scores = score1
         scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
         score_min = scores.min() - scores.max()
-        scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
+        # scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
+        scores = scores + (score_min - 40)
 
-        return scores * 15
+        return scores
 
 
 class Actor(nn.Module):
@@ -329,7 +330,7 @@ class Actor(nn.Module):
         # MLP encoder.
         extras = extras.view(inputs.size(0), -1, 6)
         unreachable = [
-            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) > 2
+            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) > 1e5
             for b in range(inputs.size(0))
         ]
 
@@ -396,7 +397,7 @@ class GNN(nn.Module):
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks, extras):
-        value = self.critic(inputs[:, :6, :, :]).squeeze(-1) - 1.5
+        value = self.critic(inputs[:, :6, :, :]).squeeze(-1)
         actor_features = self.actor(inputs[:, :6, :, :], inputs[:, 8:, :, :], inputs[:, 6, :, :], inputs[:, 7, :, :], extras)
         return value, actor_features, rnn_hxs
 
