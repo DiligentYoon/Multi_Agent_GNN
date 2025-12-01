@@ -237,6 +237,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
             next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
         )
 
+        print(f"Frontier Index: {actions.cpu().numpy()}")
         print(f"Reward : {reward.item():.2f}")
         print(f'# of frontier (obs) : { torch.nonzero(next_obs[1, :, :]).shape[0] }')
 
@@ -337,6 +338,6 @@ if __name__ == '__main__':
     
     # Run the test with visualization enabled
     run_simulation_test(config, 
-                        steps=20, 
+                        steps=30, 
                         visualize=True,
-                        load_file_path='results/25-11-30_18-08-54_MARL/checkpoints/agent_10800.pt')
+                        load_file_path='results/25-11-30_22-51-23_MARL/checkpoints/agent_151200.pt')

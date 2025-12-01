@@ -7,7 +7,7 @@ ray:
 env:
   seed: 42
   physics_dt: 0.1
-  device: "cpu"
+  device: "cuda"
   num_agent: 3
   max_velocity: 0.3
   max_yaw_rate: 1.0 # radians
@@ -55,7 +55,7 @@ env:
 
 # Agent Settings
 agent:
-  mini_batch_size: 4
+  mini_batch_size: 8
   max_batch_size: -1
   epoch: 4
   num_gae_block: 1
@@ -74,13 +74,13 @@ agent:
   policy_loss_coef: 10.0
 
   buffer:
-    rollout: 36
+    rollout: 400
 
   experiment:
     directory: "MARL"
     experiment_name: ""
-    write_interval: 30
-    checkpoint_interval: 100
+    write_interval: 5
+    checkpoint_interval: 10
 
 model:
   # Model Configuration

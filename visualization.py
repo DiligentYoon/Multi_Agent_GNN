@@ -74,7 +74,7 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
     inflated_map = inflate_obstacles_viz(maps, inflation_radius_cells=3)
     ax_gt.clear(); ax_belief.clear()
     ax_gt.imshow(maps.gt, cmap=GT_CMAP, norm=GT_NORM, origin='upper')
-    ax_belief.imshow(maps.belief_frontier, cmap=BELIEF_CMAP, norm=BELIEF_NORM, origin='upper')
+    ax_belief.imshow(maps.belief, cmap=BELIEF_CMAP, norm=BELIEF_NORM, origin='upper')
 
     def world_to_img(x, y):
         row, col = maps.world_to_grid(x, y)
@@ -123,21 +123,12 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
         for ax in (ax_gt, ax_belief):
             ax.scatter(fx, fy, s=50, c=color, marker='*')
         
-        # --- Target Candidates ---
-        # target_candidates_idx = torch.nonzero(env.obs_buf[1, :, :]).cpu().numpy()
-        # ds = env.cfg.pooling_downsampling_rate
-        # upscaled_id = target_candidates_idx * ds + ds // 2 # [row, col]
-        # target_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1)) # [rol, col] -> [col, row] -> [x, y]
-        # fx, fy = zip(*[world_to_img(x, y) for x, y in target_candidates_xy])
-        # for ax in (ax_gt, ax_belief):
-        #     ax.scatter(fx, fy, s=20, c=color, marker='x')
-        
         # --- Path history ---
-        path = viz_data["paths"][i]
-        if len(path) > 1:
-            xs, ys = zip(*[world_to_img(wx, wy) for wx, wy in path])
-            for ax in (ax_gt, ax_belief):
-                ax.plot(xs, ys, '-', linewidth=2, color=color, alpha=0.8, zorder=3)
+        # path = viz_data["paths"][i]
+        # if len(path) > 1:
+        #     xs, ys = zip(*[world_to_img(wx, wy) for wx, wy in path])
+        #     for ax in (ax_gt, ax_belief):
+        #         ax.plot(xs, ys, '-', linewidth=2, color=color, alpha=0.8, zorder=3)
 
         # --- Robot heading/velocity arrow ---
         v_cmd = np.sqrt(env.robot_velocities[i, 0]**2 + env.robot_velocities[i, 1]**2)
@@ -165,6 +156,15 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
             xs, ys = zip(*[world_to_img(wx, wy) for wx, wy in connectivity_traj[0]])
             for ax in (ax_gt, ax_belief):
                 ax.plot(xs, ys, '-', linewidth=2, color=color, alpha=0.8, zorder=3)
+
+    # --- Target Candidates ---
+    target_candidates_idx = torch.nonzero(env.obs_buf[1, :, :]).cpu().numpy()
+    ds = env.cfg.pooling_downsampling_rate
+    upscaled_id = target_candidates_idx * ds + ds // 2 # [row, col]
+    target_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1)) # [rol, col] -> [col, row] -> [x, y]
+    fx, fy = zip(*[world_to_img(x, y) for x, y in target_candidates_xy])
+    for ax in (ax_gt, ax_belief):
+        ax.scatter(fx, fy, s=1, c=AGENT_COLORS[0], marker='o')
 
     # --- Final Touches ---
     for ax in (ax_gt, ax_belief):

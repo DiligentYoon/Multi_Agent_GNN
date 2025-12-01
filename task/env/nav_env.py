@@ -132,7 +132,6 @@ class NavEnv(Env):
             ds = self.cfg.pooling_downsampling_rate
             center_point = downsampled_id * ds + ds // 2  # 블록의 중앙 지점
 
-            # 해당 블록 내에서 실제 프론티어 셀들을 찾습니다.
             r_start, c_start = downsampled_id * ds
             r_end, c_end = r_start + ds, c_start + ds
             
@@ -142,7 +141,6 @@ class NavEnv(Env):
             relative_frontier_coords = np.argwhere(block_view == frontier_mask)
 
             if relative_frontier_coords.size > 0:
-                # 프론티어 셀이 있다면, 블록 중앙에서 가장 가까운 프론티어 셀을 선택합니다.
                 # 절대 좌표로 변환
                 absolute_frontier_coords = relative_frontier_coords + np.array([r_start, c_start])
                 
@@ -156,7 +154,6 @@ class NavEnv(Env):
                 final_target_rc = absolute_frontier_coords[closest_frontier_idx]
             else:
                 # 만약 해당 블록에 프론티어가 없다면 (이론상 드문 경우),
-                # 기존 로직(중앙점)을 폴백으로 사용합니다.
                 final_target_rc = center_point
 
             # 보정된 Target Point를 최종 할당
@@ -621,7 +618,7 @@ class NavEnv(Env):
 
             # Forward Connectivity Target Info
             min_dist = np.linalg.norm(p_p)
-            if (min_dist < self.cfg.d_conn) or (parent_id == -1):
+            if (min_dist < self.neighbor_radius* 0.95) or (parent_id == -1):
                 # Connectivity 유지 중인 Parent Node & Parent가 없는 Root Node
                 on_conn = False
                 start_cell = self.map_info.world_to_grid_np(pos_i) # (col, row)
