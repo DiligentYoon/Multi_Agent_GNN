@@ -137,7 +137,7 @@ def astar_search(map_info: MapInfo,
                 heapq.heappush(open_list, neighbor_node)
                 open_set_lookup[neighbor_pos] = neighbor_node
 
-    print(f"[INFO] Agent {agent_id}: No path found")
+    # print(f"[INFO] Agent {agent_id}: No path found")
     return None
 
 

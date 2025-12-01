@@ -43,7 +43,7 @@ class ObservationManager:
         # obs/frontier/all pos/all trajectory/explored/explorable/history pos/history goal
         self.global_map = torch.zeros(8, self.global_map_h, self.global_map_w).float().to(device)
         # 1-2 cartesian global agent location, 3-6 local map boundary
-        self.global_info = torch.zeros(self.num_robots, 6).long()
+        self.global_info = torch.zeros(self.num_robots, 6).long().to(device)
         
 
         # Initial full and local pose

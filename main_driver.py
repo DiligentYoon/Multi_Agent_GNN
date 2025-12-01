@@ -82,6 +82,7 @@ def main(cfg: dict):
     # --- Training Loop ---
     total_timesteps = cfg['train']['timesteps']
     rollout = num_workers * cfg['agent']['buffer']['rollout']
+    rollout_log_interval = 2
     
     per_step_reward = deque(maxlen=100)
     value_losses = deque(maxlen=100)
@@ -112,7 +113,7 @@ def main(cfg: dict):
         iter_v_loss, iter_a_loss, iter_d_entropy, iter_reward = 0, 0, 0, 0
         for buffer in rollout_buffers:
             # The buffer from the worker already has returns computed.
-            value_loss, action_loss, dist_entropy = learner_agent.update(buffer)
+            value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
             iter_reward += torch.sum(buffer.rewards).item() / rollout
             if value_loss > 0: # Assuming positive loss indicates a valid update

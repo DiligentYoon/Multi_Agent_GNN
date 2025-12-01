@@ -67,6 +67,7 @@ class NavEnv(Env):
         # Replanning State
         self.agent_paths = [None] * self.num_agent
         self.agent_path_targets = [None] * self.num_agent
+        self.is_valid_path = np.zeros(self.num_agent, dtype=np.bool_)
 
         # Done flags
         self.is_collided_obstacle = np.zeros((self.num_agent, 1), dtype=np.bool_)
@@ -223,6 +224,8 @@ class NavEnv(Env):
         per_step_penalty = -coeff["per_step"]
         # Success Event Reward
         success_reward = coeff["success"] * np.astype(np.any(self.is_success), np.float32)
+        # Failure Penalty
+        failure_penalty = -coeff["success"] * np.astype(np.any(self.is_failure), np.float32)
         # Connectivity Penalty
         connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
@@ -254,9 +257,11 @@ class NavEnv(Env):
         cells = self.map_info.world_to_grid_np(self.robot_locations)
         rows, cols = cells[:, 1], cells[:, 0]
 
+        # valid path 체크
+        is_valid_path = self.is_valid_path
+
         # 목표 도달 유무 체크
         reached_goal = (self.map_info.gt[rows, cols] == self.map_info.map_mask["goal"]).reshape(-1, 1)
-        self.is_success = reached_goal
 
         # 맵 경계 체크
         H, W = self.map_info.H, self.map_info.W
@@ -281,9 +286,13 @@ class NavEnv(Env):
             colliding_agents = np.where(flat_indices == idx)[0]
             for agent_idx in colliding_agents:
                 self.is_collided_drone[agent_idx] = True
+        
+        # 성공 & 실패 유무
+        self.is_success = reached_goal
+        self.is_failure = self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
-        terminated = np.any(self.is_collided_obstacle | self.is_collided_drone | reached_goal)
+        terminated = np.any(self.is_collided_obstacle | self.is_collided_drone | reached_goal | ~is_valid_path)
 
         return terminated, truncated, reached_goal
 
@@ -390,7 +399,7 @@ class NavEnv(Env):
             if not is_connected:
                 continue
 
-            print(f"Valid start positions found after {attempt + 1} attempts.")
+            # print(f"Valid start positions found after {attempt + 1} attempts.")
             return selected_world_coords[:, 0], selected_world_coords[:, 1]
 
         raise RuntimeError(f"No valid starting positions found within {max_attempts}")
@@ -653,8 +662,10 @@ class NavEnv(Env):
                 if path_cells is not None and len(path_cells) > 0:
                     self.agent_paths[i] = path_cells                # (row, col)
                     self.agent_path_targets[i] = end_cell           # (row, col)
+                    self.is_valid_path[i] = True
                 else:
                     # 경로 생성 실패 시, 현재 위치 고정
+                    self.is_valid_path[i] = False
                     self.agent_paths[i] = np.flip(start_cell)
                     self.agent_path_targets[i] = start_cell
                 
