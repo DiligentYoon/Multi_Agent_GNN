@@ -80,7 +80,7 @@ agent:
     directory: "MARL"
     experiment_name: ""
     write_interval: 5
-    checkpoint_interval: 10
+    checkpoint_interval: 5
 
 model:
   # Model Configuration
