@@ -98,7 +98,7 @@ def main(cfg: dict):
         iteration += 1
         
         # Broadcast the latest policy weights to all workers
-        current_weights = learner_agent.model.network.actor.state_dict()
+        current_weights = learner_agent.model.network.state_dict()
         cpu_weights = {k: v.to('cpu') for k, v in current_weights.items()}
         weights_ref = ray.put(cpu_weights)
         set_weight_futures = [worker.set_weights.remote(weights_ref) for worker in workers]

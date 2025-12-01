@@ -195,4 +195,4 @@ class RolloutWorker:
             Inputs:
                 new_weights: A state_dict containing the new weights.
         """
-        self.agent.model.network.actor.load_state_dict(new_weights)
+        self.agent.model.network.load_state_dict(new_weights)
