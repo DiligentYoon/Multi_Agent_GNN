@@ -55,9 +55,9 @@ env:
 
 # Agent Settings
 agent:
-  mini_batch_size: 8
+  mini_batch_size: 32
   max_batch_size: -1
-  epoch: 4
+  epoch: 2
   num_gae_block: 1
 
   discount_factor: 0.99
@@ -74,7 +74,7 @@ agent:
   policy_loss_coef: 10.0
 
   buffer:
-    rollout: 512
+    rollout: 256
 
   experiment:
     directory: "MARL"

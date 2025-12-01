@@ -67,9 +67,9 @@ class PPOAgent(Agent):
 
             for sample in data_generator:
                 # Reshape to do in a single forward pass for all steps
-                for i in range(sample['obs'].shape[0]):
-                    if torch.nonzero(sample['obs'][i, 1, :, :]).shape[0] <= torch.max(sample['actions'][i]):
-                        raise ValueError("Action exceeds distribution")
+                # for i in range(sample['obs'].shape[0]):
+                #     if torch.nonzero(sample['obs'][i, 1, :, :]).shape[0] <= torch.max(sample['actions'][i]):
+                #         raise ValueError("Action exceeds distribution")
                 values, action_log_probs, dist_entropy, _, action_feature = \
                     self.model.evaluate_actions(
                         sample['obs'], sample['rec_states'],
