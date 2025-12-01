@@ -76,7 +76,7 @@ def main(cfg: dict):
 
     # --- Create Rollout Workers ---
     num_workers = cfg['ray']['num_workers']
-    workers = [RolloutWorker.remote(worker_id=i, cfg=cfg, device=device) for i in range(num_workers)]
+    workers = [RolloutWorker.remote(worker_id=i, cfg=cfg) for i in range(num_workers)]
     print(f"{num_workers} rollout workers created.")
 
     # --- Training Loop ---
@@ -97,7 +97,8 @@ def main(cfg: dict):
         
         # Broadcast the latest policy weights to all workers
         current_weights = learner_agent.model.network.actor.state_dict()
-        weights_ref = ray.put(current_weights)
+        cpu_weights = {k: v.to('cpu') for k, v in current_weights.items()}
+        weights_ref = ray.put(cpu_weights)
         set_weight_futures = [worker.set_weights.remote(weights_ref) for worker in workers]
         ray.get(set_weight_futures) # Wait for all workers to update
 

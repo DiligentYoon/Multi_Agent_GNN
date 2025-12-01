@@ -23,7 +23,7 @@ class RolloutWorker:
     returns it as a RolloutBuffer. This worker is stateful and can continue
     an episode across multiple calls to `sample()`.
     """
-    def __init__(self, worker_id: int, cfg: dict, device: torch.device):
+    def __init__(self, worker_id: int, cfg: dict, device: torch.device = torch.device("cpu")):
         """
         Initializes the worker.
 
@@ -45,11 +45,11 @@ class RolloutWorker:
 
         self.worker_id = worker_id
         self.cfg = cfg
-        self.device = device
+        self.device = torch.device("cpu")
         
         # --- Environment, Model, Agent, and Buffer ---
         # These are created once per worker.
-        self.env = NavEnv(episode_index=worker_id, device=device, cfg=cfg['env'])
+        self.env = NavEnv(episode_index=worker_id, device=self.device, cfg=cfg['env'])
         
         pr = self.env.cfg.pooling_downsampling_rate
         num_agents = cfg['env']['num_agent']
@@ -57,7 +57,7 @@ class RolloutWorker:
         self.action_space = gym.spaces.Box(0, (self.env.map_info.H // pr) * (self.env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
         
         actor_critic_model = self._create_model(cfg['model'])
-        self.agent = PPOAgent(actor_critic_model, device, cfg['agent'])
+        self.agent = PPOAgent(actor_critic_model, self.device, cfg['agent'])
         
         self.rollout_fragment_length = self.cfg['agent']['buffer']['rollout']
 
