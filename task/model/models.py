@@ -423,7 +423,7 @@ class RL_ActorCritic(nn.Module):
             self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,
             self.dist.parameters())), lr=lr[0], eps=eps)
         self.critic_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad,
-            self.network.critic.parameters()), lr=lr[0] * lr[1], eps=eps)
+            self.network.critic.parameters()), lr=lr[1], eps=eps)
 
         self.model_type = model_type
 
