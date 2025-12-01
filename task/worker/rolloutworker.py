@@ -11,6 +11,7 @@ import torch
 import random
 import gymnasium as gym
 
+from collections import deque
 from task.env.nav_env import NavEnv
 from task.agent.ppo import PPOAgent
 from task.buffer.rolloutbuffer import CoMappingRolloutBuffer
@@ -42,7 +43,7 @@ class RolloutWorker:
                 dc.threadpool_limits = _dummy_threadpool_limits
             except Exception:
                 pass
-
+        
         self.worker_id = worker_id
         self.cfg = cfg
         self.device = torch.device("cpu")
@@ -60,11 +61,13 @@ class RolloutWorker:
         self.agent = PPOAgent(actor_critic_model, self.device, cfg['agent'])
         
         self.rollout_fragment_length = self.cfg['agent']['buffer']['rollout']
+        self.rollout_log_interval = 100
 
         # --- Stateful variables for continuing episodes ---
         self.last_rec_states = None
         self.last_mask = None
         self.episode_is_done = True
+        self.per_step_reward = deque(maxlen=100)
 
 
     def _create_model(self, model_cfg: dict) -> RL_ActorCritic:
@@ -105,7 +108,7 @@ class RolloutWorker:
 
 
         # Collect a rollout fragment of a fixed length.
-        for _ in range(self.rollout_fragment_length):
+        for i in range(self.rollout_fragment_length):
             # If the last episode was done, reset the environment.
             if self.episode_is_done:
                 # print(f"Worker {self.worker_id}: Resetting environment.")
@@ -150,6 +153,13 @@ class RolloutWorker:
                 reward, ~done,
                 next_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate
             )
+
+            # CLI Logging
+            self.per_step_reward.append(reward.item())
+            if i % self.rollout_log_interval == 0 and i > 0:
+                print(f"Worker {self.worker_id}: Collected {i} steps of rollout.")
+                print(f"Mean Rewards : {sum(self.per_step_reward) / len(self.per_step_reward):.2f}")
+
 
             # Update state for the next step
             self.last_obs = next_obs
