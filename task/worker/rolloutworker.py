@@ -156,9 +156,9 @@ class RolloutWorker:
 
             # CLI Logging
             self.per_step_reward.append(reward.item())
-            if i % self.rollout_log_interval == 0 and i > 0:
-                print(f"Worker {self.worker_id}: Collected {i} steps of rollout.")
-                print(f"Mean Rewards : {sum(self.per_step_reward) / len(self.per_step_reward):.2f}")
+            # if i % self.rollout_log_interval == 0 and i > 0:
+            #     print(f"Worker {self.worker_id}: Collected {i} steps of rollout.")
+            #     print(f"Mean Rewards : {sum(self.per_step_reward) / len(self.per_step_reward):.2f}")
 
 
             # Update state for the next step

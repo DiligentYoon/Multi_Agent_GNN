@@ -30,6 +30,7 @@ from task.env.nav_env import NavEnv
 from task.worker.rolloutworker import RolloutWorker
 from task.agent.ppo import PPOAgent
 from task.model.models import RL_ActorCritic
+from test_main_driver import viz_simulation_test
 import gymnasium as gym
 
 def main(cfg: dict):
@@ -53,13 +54,14 @@ def main(cfg: dict):
 
     # --- Create Central Learner Agent ---
     # Dummy values for H, W - the model architecture doesn't strictly depend on them
-    temp_env = NavEnv(episode_index=0, device=device, cfg=cfg['env'])
-    pr = temp_env.cfg.pooling_downsampling_rate
+    eval_env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False)
+    pr = eval_env.cfg.pooling_downsampling_rate
     num_agents = cfg['env']['num_agent']
-    temp_H, temp_W = temp_env.map_info.H, temp_env.map_info.W 
+    temp_H, temp_W = eval_env.map_info.H, eval_env.map_info.W 
     observation_space = gym.spaces.Box(0, 1, (8 + num_agents, temp_H // pr, temp_W // pr), dtype='uint8')
     action_space = gym.spaces.Box(0, (temp_H // pr) * (temp_W // pr) - 1, (num_agents,), dtype='int32')
-    del temp_env
+    
+
 
     model_cfg = cfg['model']
     for key, value in model_cfg.items():
@@ -105,15 +107,16 @@ def main(cfg: dict):
         ray.get(set_weight_futures) # Wait for all workers to update
 
         # Trigger parallel rollouts
+        t1_rollout = time.time()
         rollout_futures = [worker.sample.remote() for worker in workers]
-        
+        t2_rollout = time.time()
+
         # Gather the collected rollout buffers
         rollout_buffers = ray.get(rollout_futures)
 
         # Perform learning updates using the collected data
         t1 = time.time()
         iter_v_loss, iter_a_loss, iter_d_entropy, iter_per_step_reward, iter_rollout_reward = 0, 0, 0, 0, 0
-        print(f"======== Starting Training Iteration {iteration} ========")
         for buffer in rollout_buffers:
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
@@ -160,13 +163,37 @@ def main(cfg: dict):
             learner_agent.model.save(checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
         
+
+        # Evaluation and Visualization
+        if iteration % cfg['train']['eval_freq'] == 0:
+            eval_dir = os.path.join(experiment_dir, "eval")
+            os.makedirs(eval_dir, exist_ok=True)
+            gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
+            gif_path_viz_train = os.path.join(eval_dir, f"train_viz_iter_{iteration}.gif")
+            print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
+            viz_simulation_test(cfg, steps=10, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            viz_simulation_test(cfg, steps=10, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
+        
         # CLI Logging
-        print(f"Time for train : {t2 - t1:.2f} sec")
-        print(f"Per-Step Rewards : {iter_per_step_reward / num_updates:.2f}")
-        print(f"Rollout Rewards : {iter_rollout_reward / num_updates:.2f}")
-        print(f"Value Loss : {iter_v_loss / num_updates:.2f}")
-        print(f"Policy Loss : {iter_a_loss / num_updates:.2f}")
-        print(f"============= Learning Progress at Iteration {iteration} ==============")
+        content_width = 64
+        line_header = f"Training Iteration {iteration} Report"
+        line_rollout_time = f"Rollout Time     : {t2_rollout - t1_rollout:6.2f} sec"
+        line_train_time = f"Training Time    : {t2 - t1:6.2f} sec"
+        line_per_step_reward = f"Per-Step Rewards : {iter_per_step_reward / num_updates:6.2f}"
+        line_rollout_reward = f"Rollout Rewards  : {iter_rollout_reward / num_updates:6.2f}"
+        line_value_loss = f"Value Loss       : {iter_v_loss / num_updates:6.2f}"
+        line_policy_loss = f"Policy Loss      : {iter_a_loss / num_updates:6.2f}"
+        
+        print(f" ________________________________________________________________")
+        print(f"|{line_header.center(content_width)}|")
+        print(f"|________________________________________________________________|")
+        print(f"|{line_rollout_time:<{content_width}}|")
+        print(f"|{line_train_time:<{content_width}}|")
+        print(f"|{line_per_step_reward:<{content_width}}|")
+        print(f"|{line_rollout_reward:<{content_width}}|")
+        print(f"|{line_value_loss:<{content_width}}|")
+        print(f"|{line_policy_loss:<{content_width}}|")
+        print(f"|________________________________________________________________|")
 
     # --- Cleanup ---
     writer.close()

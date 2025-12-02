@@ -51,7 +51,7 @@ class PPOAgent(Agent):
         if min(valid_advantages.shape) == 0:
             print('empty samples ... skip !')
             return 0, 0, 0
-        # print('min/max/mean/med adv: {:.3f}/{:.3f}/{:.3f}/{:.3f}'.format(valid_advantages.min(), valid_advantages.max(), valid_advantages.mean(), valid_advantages.median()))
+
         advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-6)
         value_loss_epoch = 0
         action_loss_epoch = 0

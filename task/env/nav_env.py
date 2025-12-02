@@ -16,7 +16,7 @@ from .nav_env_cfg import NavEnvCfg
 
 
 class NavEnv(Env):
-    def __init__(self, episode_index: int | np.ndarray, device: torch.device, cfg: dict):
+    def __init__(self, episode_index: int | np.ndarray, device: torch.device, cfg: dict, is_train: bool = True):
         self.cfg = NavEnvCfg(cfg)
         super().__init__(self.cfg)
 
@@ -27,6 +27,7 @@ class NavEnv(Env):
         self.decimation = self.cfg.decimation
         self.neighbor_radius = self.cfg.d_conn * 1.5
         self.max_episode_steps = self.cfg.max_episode_steps
+        self.is_train = is_train
 
         # Controller
         self.cfg.controller['a_max'] = self.max_lin_acc
@@ -223,9 +224,9 @@ class NavEnv(Env):
         # Per-step Penalty
         per_step_penalty = -coeff["per_step"]
         # Success Event Reward
-        success_reward = coeff["success"] * np.astype(np.any(self.is_success), np.float32)
+        success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
         # Failure Penalty
-        failure_penalty = -0.5 * coeff["success"] * np.astype(np.any(self.is_failure), np.float32)
+        failure_penalty = -0.5 * coeff["success"] * np.astype(self.is_failure, np.float32)
         # Connectivity Penalty
         connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
@@ -289,11 +290,11 @@ class NavEnv(Env):
                 self.is_collided_drone[agent_idx] = True
         
         # 성공 & 실패 유무
-        self.is_success = reached_goal
-        self.is_failure = self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn
+        self.is_success = np.any(reached_goal)
+        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
-        terminated = np.any(self.is_collided_obstacle | self.is_collided_drone | reached_goal | ~is_valid_path)
+        terminated = copy.deepcopy(self.is_success | self.is_failure)
 
         return terminated, truncated, reached_goal
 

@@ -174,7 +174,7 @@ class ObservationManager:
             col = np.copy(cols)
             row[agent_cell_pos[1]] = True
             col[agent_cell_pos[0]] = True
-            distance_field(dist_input[i, :, :], obstacle, optimized=(row, col)) # TODO: obstacle이 정상적으로 인가된건가 ?
+            distance_field(dist_input[i, :, :], obstacle, optimized=(row, col))
 
         dist_input = dist_input.to(self.device)
         dist_input[self.global_map[1:2, :, :].repeat(self.num_robots, 1, 1) == 0] = 4

@@ -124,7 +124,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
-    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'])
+    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False)
     print("Environment created and reset.")
     # --- Agent & Models ---
     pr = env.cfg.pooling_downsampling_rate
@@ -322,6 +322,166 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
 
 
+def viz_simulation_test(cfg: dict,
+                        is_train: bool, 
+                        steps: int,
+                        gif_path: str = 'test_results', 
+                        agent_model: RL_ActorCritic = None):
+    """
+    Runs a simulation test, generating a GIF and plots.
+        Inputs:
+            cfg: Total Configuration
+            stpes: maximum simulation steps
+            out_dir: visualization save directory
+            visualize : If True, generates and saves a GIF and plots. 
+                        If False, runs the simulation without visualization.
+            load_file_path: Path to load checkpoint from (used if agent_model is None)
+            agent_model: Pre-loaded model object (used for evaluation during training)
+    """
+    # --- Device ---
+    device = torch.device(cfg['env']['device'])
+    # --- Environment ---
+    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train)
+    # --- Agent & Models ---
+    pr = env.cfg.pooling_downsampling_rate
+    num_agents = cfg['env']['num_agent']
+    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, env.map_info.H // pr, env.map_info.W // pr), dtype='uint8')
+    action_space = gym.spaces.Box(0, (env.map_info.H // pr) * (env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
+    
+    actor_critic_model = agent_model
+    agent, buffer = create_agent(cfg['agent'], actor_critic_model, num_agents,
+                                 cfg['train']['eval_freq'], observation_space, action_space, device)
+
+    # --- Visualization and Data Tracking Setup ---
+    frames: List[np.ndarray] = []
+    fig, ax1, ax2 = None, None, None
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+
+    path_history  = [[] for _ in range(num_agents)]
+    cbf_history   = [[] for _ in range(num_agents)]
+
+    # --- Callback for rendering each physics step ---
+    def render_callback(env_instance: NavEnv):
+        # This function is only called if visualize is True.
+        for j in range(num_agents):
+            path_history[j].append((env_instance.robot_locations[j, 0], env_instance.robot_locations[j, 1]))
+
+        # Create a list of agent pairs for connectivity visualization
+        connectivity_pairs = []
+        for i in range(env_instance.num_agent):
+            pos1 = env_instance.robot_locations[i]
+            if not env_instance.root_mask[i]:
+                parent_id = env_instance.connectivity_graph.get_parent(i)
+                pos2 = env_instance.robot_locations[parent_id]
+            else:
+                pos2 = pos1
+            connectivity_pairs.append((pos1, pos2))
+
+
+        # Create a dictionary with visualization data
+        viz_data = {
+            "paths": path_history,
+            "obs_local": env_instance.obstacle_states,
+            "connectivity_pairs": connectivity_pairs,
+            "target_local": env_instance.cbf_infos["nominal"]["p_targets"],
+            "connectivity_trajs": env_instance.connectivity_traj,
+        }
+
+        # Call the draw_frame function
+        draw_frame(ax1, ax2, env_instance, viz_data)
+        
+        fig.canvas.draw()
+        buf = fig.canvas.buffer_rgba()
+        frame = np.asarray(buf, dtype=np.uint8)[..., :3]
+        frames.append(frame.copy())
+
+    # Determine which callback to use
+    callback_fn = render_callback
+
+    # ================ Simulation Start ====================
+    obs, _, info = env.reset(episode_index=25)
+
+    # 초기 액션 세팅 + 스텝
+    l = buffer.mini_step * buffer.mini_step_size
+    h = (buffer.mini_step + 1) * buffer.mini_step_size
+    buffer.obs[0][l:h].copy_(obs.view(1, *observation_space.shape))
+    buffer.extras[0][l:h].copy_(info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate)
+
+    ll, lh = l-buffer.mini_step_size, h-buffer.mini_step_size
+    if lh == 0:
+        lh = buffer.mini_step_size * buffer.num_rollout_blocks
+    # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (코드 처음에만 수행)
+    buffer.obs[-1][ll:lh].copy_(buffer.obs[0][l:h])
+    buffer.rec_states[-1][ll:lh].copy_(buffer.rec_states[0][l:h])
+    buffer.extras[-1][ll:lh].copy_(buffer.extras[0][l:h])
+
+    # act를 위한 변수 초기화
+    rec_states = buffer.rec_states[0][l:h]
+    mask = buffer.masks[0][l:h]
+
+    for step_num in range(steps):
+
+        with torch.no_grad():
+            values, actions, action_log_probs, \
+            rec_states, action_maps             = agent.act(obs.view(1, *observation_space.shape),
+                                                            rec_states,
+                                                            mask,
+                                                            info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
+                                                            deterministic=True)
+
+        # 시점 t+1에서의 observation, reward, done 추출
+        next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
+        done = torch.logical_or(terminated, truncated)
+
+        # 시점 t+1에서의 observation, rec_states, addtional_info 
+        # 시점 t에서의 action 저장
+        # 시점 t+1에서의 reward, done 저장
+        buffer.insert(
+            # obs_t+1, rec_state_t+1
+            next_obs.view(1, *observation_space.shape), rec_states,
+            # action_t, action_log_t, value_t
+            actions, action_log_probs, values,
+            # reward_t+1, done_t+1
+            reward, ~done,
+            # info_t+1
+            next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
+        )
+
+        for j in range(num_agents):
+            # Obstacle distance for CBF plot
+            obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
+            if env.num_obstacles[j] == 0:
+                min_dist = env.cfg.sensor_range**2
+            else:
+                dist = np.linalg.norm(obs_state, axis=1)
+                min_ids = np.argmin(dist)
+                min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
+            
+            # Connectivity distance for CBF plot
+            p_c = env.cbf_infos["safety"]["p_c_agent"][j].reshape(-1)
+            if len(p_c) > 0:
+                min_agent_dist = p_c[0]**2 + p_c[1]**2
+            else:
+                min_agent_dist = 0
+            
+            agent_cbf_info = {"obs_avoid": min_dist - env.cfg.d_safe**2,
+                                "agent_conn": env.neighbor_radius**2 - min_agent_dist}
+            cbf_history[j].append(agent_cbf_info)
+
+        # 시점 transition
+        obs = next_obs
+        info = next_info
+        mask = ~done
+        
+        if done:
+            break
+
+    plt.close(fig)
+    # --- Save GIF ---
+    print(f"GIF saved at step {step_num+1}.")
+    imageio.mimsave(gif_path, frames, fps=20)
+
+
 
 if __name__ == '__main__':
     # Load config
@@ -336,4 +496,4 @@ if __name__ == '__main__':
     run_simulation_test(config, 
                         steps=30, 
                         visualize=True,
-                        load_file_path='results/25-12-01_14-57-47_MARL/checkpoints/agent_188160.pt')
+                        load_file_path='results/25-12-02_16-21-00_MARL/agent_38400.pt')

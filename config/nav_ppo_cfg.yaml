@@ -55,9 +55,9 @@ env:
 
 # Agent Settings
 agent:
-  mini_batch_size: 32
+  mini_batch_size: 4
   max_batch_size: -1
-  epoch: 2
+  epoch: 1
   num_gae_block: 1
 
   discount_factor: 0.99
@@ -74,7 +74,7 @@ agent:
   policy_loss_coef: 10.0
 
   buffer:
-    rollout: 128
+    rollout: 16
 
   experiment:
     directory: "MARL"
@@ -96,6 +96,6 @@ model:
     
 # Training Settings
 train:
-  eval_freq: 100
+  eval_freq: 1
   max_episode: 1000
   timesteps: 5000000
