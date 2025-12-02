@@ -67,20 +67,20 @@ agent:
 
   value_clip_ratio: 0.2
   clip_ratio: 0.2
-  grad_norm_clip: 0.5
+  grad_norm_clip: 1.0
 
-  value_loss_coef: 0.5
+  value_loss_coef: 1.0
   entropy_loss_coef: 0.005
   policy_loss_coef: 10.0
 
   buffer:
-    rollout: 256
+    rollout: 128
 
   experiment:
     directory: "MARL"
     experiment_name: ""
     write_interval: 5
-    checkpoint_interval: 5
+    checkpoint_interval: 10
 
 model:
   # Model Configuration

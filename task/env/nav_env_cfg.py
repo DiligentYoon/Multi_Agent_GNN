@@ -17,7 +17,7 @@ class NavEnvCfg(EnvCfg):
         self.pooling_downsampling_rate = 4
 
         # Episode Information
-        self.decimation = 5
+        self.decimation = 10
         self.max_episode_steps = 800
 
         # Controller Cfg
