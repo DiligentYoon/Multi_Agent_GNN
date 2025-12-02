@@ -2,6 +2,7 @@
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/algo/ppo.py
 import torch
 import torch.nn.functional as F
+import copy
 
 from typing import Mapping, Optional, Any, Dict, Tuple
 from torch.nn import Module
@@ -56,7 +57,11 @@ class PPOAgent(Agent):
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
+        ratio_epoch = 0
 
+        # print("adv mean/std/min/max:", advantages.mean().item(), advantages.std().item(), advantages.min().item(), advantages.max().item())
+
+        # prev_weight = copy.deepcopy(self.model.network.state_dict())
         for e in range(self.epoch):
             data_generator = data.sample_mini_batch(advantages, 
                                                     self.mini_batch_size, 
@@ -84,6 +89,7 @@ class PPOAgent(Agent):
                 adv_targ = sample['adv_targ']
 
                 ratio = torch.exp(action_log_probs - old_action_log_probs)
+                
                 surr1 = ratio * adv_targ
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio) * adv_targ
                 action_loss = -torch.min(surr1, surr2).mean()
@@ -103,7 +109,7 @@ class PPOAgent(Agent):
                 else:
                     value_loss = 0.5 * (returns - values).pow(2).mean()
 
-
+                
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
 
@@ -115,14 +121,31 @@ class PPOAgent(Agent):
                 self.critic_optimizer.step()
 
                 if not augmentation:
+                    ratio_epoch += ratio.mean().item()
                     value_loss_epoch += value_loss.item()
                     action_loss_epoch += action_loss.item()
                     dist_entropy_epoch += dist_entropy.item()
         
+        # zero_update = 0
+        # zero_keys = []
+        # update_sum = torch.tensor(0, dtype=torch.float32, device=self.device)
+        # cur_weight = copy.deepcopy(self.model.network.state_dict())
+        # for key in cur_weight.keys():
+        #     p = prev_weight[key]
+        #     c = cur_weight[key]
+        #     if torch.sum((c-p).abs()) == 0:
+        #         zero_update += 1
+        #         zero_keys.append(key)
+        #     update_sum += torch.sum((c-p).abs())
+        # print("zero keys:")
+        # for k in zero_keys:
+        #     print(" ", k)
+            
         num_updates = self.epoch * self.mini_batch_size
 
+        ratio_epoch /= num_updates
         value_loss_epoch /= num_updates
         action_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates
 
-        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch
+        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, ratio_epoch

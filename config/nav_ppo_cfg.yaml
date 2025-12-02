@@ -37,8 +37,8 @@ env:
     a_max: 0
     w_max: 0
     v_max: 0
-    gamma_c1: 2.5
-    gamma_c2: 2.5
+    gamma_c1: 1.5
+    gamma_c2: 1.5
     gamma_a1: 1.5
     gamma_a2: 1.5
     gamma_conn1: 1.5
@@ -55,7 +55,7 @@ env:
 
 # Agent Settings
 agent:
-  mini_batch_size: 8
+  mini_batch_size: 4
   max_batch_size: -1
   epoch: 2
   num_gae_block: 1
@@ -67,14 +67,14 @@ agent:
 
   value_clip_ratio: 0.2
   clip_ratio: 0.2
-  grad_norm_clip: 1.0
+  grad_norm_clip: 0.5
 
   value_loss_coef: 1.0
-  entropy_loss_coef: 0.005
+  entropy_loss_coef: 0.0001
   policy_loss_coef: 10.0
 
   buffer:
-    rollout: 64
+    rollout: 128
 
   experiment:
     directory: "MARL"
@@ -90,7 +90,7 @@ model:
   ablation: false
 
   # Optimizer Paramters
-  actor_lr: 5e-4
+  actor_lr: 5e-3
   critic_lr: 5e-4
   eps: 1e-6
     

@@ -17,8 +17,8 @@ class NavEnvCfg(EnvCfg):
         self.pooling_downsampling_rate = 4
 
         # Episode Information
-        self.decimation = 10
-        self.max_episode_steps = 800
+        self.decimation = 20
+        self.max_episode_steps = 50
 
         # Controller Cfg
         self.d_conn = 0.5
@@ -28,8 +28,8 @@ class NavEnvCfg(EnvCfg):
 
         # Reward Info
         self.reward_weights = {
-            "exploration": 0.005,
-            "success": 50.0,
+            "exploration": 0.01,
+            "success": 10.0,
             "per_step": 0.1,
             "connectivity": 1.0
         }

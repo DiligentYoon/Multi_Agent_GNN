@@ -86,8 +86,10 @@ def main(cfg: dict):
     total_timesteps = cfg['train']['timesteps']
     rollout = num_workers * cfg['agent']['buffer']['rollout']
     
+    
     per_step_reward = deque(maxlen=100)
     rollout_reward = deque(maxlen=100)
+    ratios = deque(maxlen=100)
     value_losses = deque(maxlen=100)
     action_losses = deque(maxlen=100)
     dist_entropies = deque(maxlen=100)
@@ -114,14 +116,16 @@ def main(cfg: dict):
 
         # Perform learning updates using the collected data
         t1 = time.time()
-        iter_v_loss, iter_a_loss, iter_d_entropy, iter_per_step_reward, iter_rollout_reward = 0, 0, 0, 0, 0
+        iter_v_loss, iter_a_loss, iter_d_entropy, iter_ratio = 0, 0, 0, 0
+        iter_per_step_reward, iter_rollout_reward = 0, 0
         for buffer in rollout_buffers:
             # The buffer from the worker already has returns computed.
-            value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
+            value_loss, action_loss, dist_entropy, ratio = learner_agent.update(buffer.to(device))
             
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
             if value_loss > 0: # Assuming positive loss indicates a valid update
+                iter_ratio += ratio
                 iter_v_loss += value_loss
                 iter_a_loss += action_loss
                 iter_d_entropy += dist_entropy
@@ -132,6 +136,7 @@ def main(cfg: dict):
         if num_updates > 0:
             per_step_reward.append(iter_per_step_reward / num_updates)
             rollout_reward.append(iter_rollout_reward / num_updates)
+            ratios.append(iter_ratio / num_updates)
             value_losses.append(iter_v_loss / num_updates)
             action_losses.append(iter_a_loss / num_updates)
             dist_entropies.append(iter_d_entropy / num_updates)
@@ -142,17 +147,14 @@ def main(cfg: dict):
         if iteration % cfg['agent']['experiment']['write_interval'] == 0 and len(value_losses) > 0:
             mean_per_step_reward = np.mean(per_step_reward)
             mean_rollout_reward = np.mean(rollout_reward)
+            mean_ratio = 100 * np.mean(ratios)
             mean_v_loss = np.mean(value_losses)
             mean_a_loss = np.mean(action_losses)
             mean_d_entropy = np.mean(dist_entropies)
             
-            print(f"Global Step: {global_step}/{total_timesteps} | Iteration: {iteration}")
-            print(f"  Per-Step Rewards : {mean_per_step_reward:.4f}")
-            print(f"  Rollout Rewards : {mean_rollout_reward:.4f}")
-            print(f"  Losses -> Value: {mean_v_loss:.4f}, Action: {mean_a_loss:.4f}, Entropy: {mean_d_entropy:.4f}")
-            
             writer.add_scalar('Reward/Per_step', mean_per_step_reward, global_step)
             writer.add_scalar('Reward/Rollout', mean_rollout_reward, global_step)
+            writer.add_scalar('Policy/Ratio', mean_ratio, global_step)
             writer.add_scalar('Loss/Value', mean_v_loss, global_step)
             writer.add_scalar('Loss/Action', mean_a_loss, global_step)
             writer.add_scalar('Loss/Entropy', mean_d_entropy, global_step)
@@ -180,6 +182,7 @@ def main(cfg: dict):
         line_train_time = f"Training Time    : {t2 - t1:6.2f} sec"
         line_per_step_reward = f"Per-Step Rewards : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards  : {iter_rollout_reward / num_updates:6.2f}"
+        line_value_loss = f"Ratio           : {100 * iter_ratio / num_updates:6.2f} % "
         line_value_loss = f"Value Loss       : {iter_v_loss / num_updates:6.2f}"
         line_policy_loss = f"Policy Loss      : {iter_a_loss / num_updates:6.2f}"
         
