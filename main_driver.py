@@ -99,20 +99,18 @@ def main(cfg: dict):
     while global_step < total_timesteps:
         iteration += 1
         
-        # Broadcast the latest policy weights to all workers
+        # ============== Broadcasting the Parameters ==============
         current_weights = learner_agent.model.network.state_dict()
         cpu_weights = {k: v.to('cpu') for k, v in current_weights.items()}
         weights_ref = ray.put(cpu_weights)
         set_weight_futures = [worker.set_weights.remote(weights_ref) for worker in workers]
         ray.get(set_weight_futures) # Wait for all workers to update
 
-        # Trigger parallel rollouts
+        # ============== Parallel Rollouts =================
         t1_rollout = time.time()
         rollout_futures = [worker.sample.remote() for worker in workers]
-        t2_rollout = time.time()
-
-        # Gather the collected rollout buffers
         rollout_buffers = ray.get(rollout_futures)
+        t2_rollout = time.time()
 
         # Perform learning updates using the collected data
         t1 = time.time()
@@ -128,6 +126,7 @@ def main(cfg: dict):
                 iter_a_loss += action_loss
                 iter_d_entropy += dist_entropy
         t2 = time.time()
+
         # Aggregate and log losses
         num_updates = len(rollout_buffers)
         if num_updates > 0:

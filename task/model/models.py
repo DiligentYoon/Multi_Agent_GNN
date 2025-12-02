@@ -153,7 +153,7 @@ class MLPAttention(nn.Module):
                 scale = torch.clamp(mask / (scores_detach.max(2).values - scores_detach.median(2).values), 1., 1e3)
                 scores = scores * scale.unsqueeze(-1).repeat(1, 1, nk)
             else:
-                scores = scores + (scores.min().detach() - 20) * (~mask).float().view(1, nq, nk)
+                scores = scores + (scores.min().detach()) * (~mask).float().view(1, nq, nk)
         prob = scores.softmax(dim=-1)
         return torch.einsum('bnm,bdm->bdn', prob, value), scores
     
@@ -172,7 +172,7 @@ class MultiHeadedAttention(nn.Module):
         dim = query.shape[1]
         scores = torch.einsum('bdhn,bdhm->bhnm', query, key) / dim ** .5
         if mask is not None:
-            scores = scores + (scores.min().detach() - 20) * (~mask).float().unsqueeze(0).unsqueeze(0).repeat(1, self.num_heads, 1, 1)
+            scores = scores + (scores.min().detach()) * (~mask).float().unsqueeze(0).unsqueeze(0).repeat(1, self.num_heads, 1, 1)
         prob = torch.nn.functional.softmax(scores, dim=-1)
         return torch.einsum('bhnm,bdhm->bdhn', prob, value), scores
 
@@ -314,7 +314,7 @@ class AttentionalGNN(nn.Module):
         scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
         score_min = scores.min() - scores.max()
         # scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
-        scores = scores + (score_min - 40)
+        scores = scores + score_min
 
         return scores
 
