@@ -182,7 +182,7 @@ def main(cfg: dict):
         line_train_time = f"Training Time    : {t2 - t1:6.2f} sec"
         line_per_step_reward = f"Per-Step Rewards : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards  : {iter_rollout_reward / num_updates:6.2f}"
-        line_value_loss = f"Ratio           : {100 * iter_ratio / num_updates:6.2f} % "
+        line_ratio = f"Ratio           : {100 * iter_ratio / num_updates:6.2f} % "
         line_value_loss = f"Value Loss       : {iter_v_loss / num_updates:6.2f}"
         line_policy_loss = f"Policy Loss      : {iter_a_loss / num_updates:6.2f}"
         
@@ -193,6 +193,7 @@ def main(cfg: dict):
         print(f"|{line_train_time:<{content_width}}|")
         print(f"|{line_per_step_reward:<{content_width}}|")
         print(f"|{line_rollout_reward:<{content_width}}|")
+        print(f"|{line_ratio:<{content_width}}|")
         print(f"|{line_value_loss:<{content_width}}|")
         print(f"|{line_policy_loss:<{content_width}}|")
         print(f"|________________________________________________________________|")
