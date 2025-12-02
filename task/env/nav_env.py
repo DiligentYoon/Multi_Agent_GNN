@@ -257,7 +257,8 @@ class NavEnv(Env):
         cells = self.map_info.world_to_grid_np(self.robot_locations)
         rows, cols = cells[:, 1], cells[:, 0]
 
-        # valid path 체크
+        # Valid Path 체크 & Connectivity 위반 체크
+        is_conn = np.array(self.cbf_infos["nominal"]["on_conn"])
         is_valid_path = self.is_valid_path
 
         # 목표 도달 유무 체크
@@ -289,7 +290,7 @@ class NavEnv(Env):
         
         # 성공 & 실패 유무
         self.is_success = reached_goal
-        self.is_failure = self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path
+        self.is_failure = self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
         terminated = np.any(self.is_collided_obstacle | self.is_collided_drone | reached_goal | ~is_valid_path)

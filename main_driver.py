@@ -119,7 +119,7 @@ def main(cfg: dict):
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
-            iter_rollout_reward += torch.sum(buffer.episode_rewards).item()
+            iter_rollout_reward += torch.sum(buffer.rewards).item()
             if value_loss > 0: # Assuming positive loss indicates a valid update
                 iter_v_loss += value_loss
                 iter_a_loss += action_loss

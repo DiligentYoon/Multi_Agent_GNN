@@ -735,5 +735,5 @@ def distance_field(input, DT_target, optimized=()):
     traversible = (~DT_target).numpy()
     traversible_ma = np.ma.masked_values(traversible, 0)
     traversible_ma[goal_mask] = 0
-    df = skfmm.distance(traversible_ma, dx=0.02)
+    df = skfmm.distance(traversible_ma, dx=0.01)
     input.copy_(torch.from_numpy(np.ma.filled(df, 4)))
