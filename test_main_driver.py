@@ -213,7 +213,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
                                                             rec_states,
                                                             mask,
                                                             info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
-                                                            deterministic=True)
+                                                            deterministic=False)
 
         # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
@@ -261,42 +261,6 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
                 cbf_history[j].append(agent_cbf_info)
 
         print(f"RL Step: {step_num+1}/{steps}")
-
-        # if (step_num % buffer.rollouts == buffer.rollouts - 1) and buffer.mini_step == 0:
-        #     # 롤아웃이 끝났으면 파라미터 업데이트 수행. 먼저 마지막 스텝에 대한 +1 step value값 예측
-        #     print("Updating agent...")
-        #     next_value = agent.model.get_value(
-        #         buffer.obs[-1],
-        #         buffer.rec_states[-1],
-        #         buffer.masks[-1],
-        #         extras=buffer.extras[-1]
-        #     )[0].detach()
-
-        #     buffer.compute_returns(next_value, True, agent.cfg['discount_factor'], agent.cfg['gae_lambda'])
-
-        #     value_loss, action_loss, dist_entropy = agent.update(buffer)
-        #     if value_loss > 0:
-        #             value_losses.append(value_loss)
-        #             action_losses.append(action_loss)
-        #             dist_entropies.append(dist_entropy)
-        #     buffer.after_update()
-        #     print("Update completed.")
-
-        # TODO: 추후, Ray 전용 모델 저장 로직으로 사용
-        # if step_num > 0 and (step_num - episode_length) // write_interval < step_num // write_interval:
-        #     write_tracking_data(step_num)
-        # # Checkpoint
-        # if step_num > 0 and (step_num - episode_length) // checkpoint_interval < step_num // checkpoint_interval:
-        #     save_checkpoint(step_num)
-
-
-        # if step_num > 0 and (step_num % write_interval):
-        #     agent.model.save(step_num)
-        # Checkpoint
-        # if step_num > 0 and (step_num & checkpoint_interval):
-        #     filepath = os.path.join(os.getcwd(), os.path.join(experiment_dir, "checkpoints", f"agent_{step_num}.pt"))
-        #     agent.model.save(filepath)
-
 
         # 시점 transition
         obs = next_obs
@@ -496,4 +460,4 @@ if __name__ == '__main__':
     run_simulation_test(config, 
                         steps=30, 
                         visualize=True,
-                        load_file_path='results/25-12-02_16-21-00_MARL/agent_38400.pt')
+                        load_file_path='results/25-12-02_17-17-27_MARL/checkpoints/agent_19200.pt')
