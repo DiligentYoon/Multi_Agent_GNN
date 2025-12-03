@@ -311,8 +311,20 @@ class AttentionalGNN(nn.Module):
             scores = 2 / (dist.view(1, *unreachable.shape) + 1e-3)
         else:
             scores = score1
-        scores = (scores - scores.mean(dim=(1, 2))) / (scores.std(dim=(1, 2)) + 1e-6) # normalization
+
+        if not torch.isfinite(scores).all():
+            print("[NaN] scores BEFORE norm has NaN/inf")
+            print(scores)
+            raise RuntimeError
+
+        scores = (scores - scores.mean(dim=(1, 2))) / (scores.std(dim=(1, 2)) + 1e-3) # normalization
         scores = log_optimal_transport(scores, self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
+
+        if not torch.isfinite(scores).all():
+            print("[NaN] scores AFTER OT has NaN/inf")
+            print(scores)
+            raise RuntimeError
+
         score_min = scores.min() - scores.max()
         # scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
         scores = scores + score_min

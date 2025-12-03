@@ -53,7 +53,7 @@ class PPOAgent(Agent):
             print('empty samples ... skip !')
             return 0, 0, 0
 
-        advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-6)
+        advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-3)
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
