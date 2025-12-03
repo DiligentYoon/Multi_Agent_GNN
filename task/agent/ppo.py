@@ -133,27 +133,11 @@ class PPOAgent(Agent):
                     action_loss_epoch += action_loss.item()
                     dist_entropy_epoch += dist_entropy.item()
         
-        # zero_update = 0
-        # zero_keys = []
-        # update_sum = torch.tensor(0, dtype=torch.float32, device=self.device)
-        # cur_weight = copy.deepcopy(self.model.network.state_dict())
-        # for key in cur_weight.keys():
-        #     p = prev_weight[key]
-        #     c = cur_weight[key]
-        #     if not torch.sum((c-p).abs()) == 0:
-        #         zero_update += 1
-        #         zero_keys.append(key)
-        #     update_sum += torch.sum((c-p).abs())
-        # print("non zero keys:")
-        # for k in zero_keys:
-        #     print(" ", k)
         for k, v in self.model.network.state_dict().items():
             if torch.isnan(v).any():
                 print(f"{k} layer is nan after parameter update")
-                print(f"{k} layer grad norm : {v.grad.data.norm(2)}")
                 raise RuntimeError
 
-            
         num_updates = self.epoch * self.mini_batch_size
 
         ratio_epoch /= num_updates
