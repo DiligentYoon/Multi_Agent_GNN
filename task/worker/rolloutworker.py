@@ -7,6 +7,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import ray
+import copy
 import torch
 import random
 import gymnasium as gym
@@ -64,10 +65,11 @@ class RolloutWorker:
         self.rollout_log_interval = 100
 
         # --- Stateful variables for continuing episodes ---
+        self.cumulative_episode_step = deque(maxlen=100)
+        self.episode_step = 0
         self.last_rec_states = None
         self.last_mask = None
         self.episode_is_done = True
-        self.per_step_reward = deque(maxlen=100)
 
 
     def _create_model(self, model_cfg: dict) -> RL_ActorCritic:
@@ -86,7 +88,7 @@ class RolloutWorker:
                               eps=model_cfg['eps']).to(self.device)
 
 
-    def sample(self) -> CoMappingRolloutBuffer:
+    def sample(self) -> tuple[CoMappingRolloutBuffer, float]:
         """
         Collects a fragment of experience of `rollout_fragment_length` steps.
         
@@ -112,6 +114,8 @@ class RolloutWorker:
             # If the last episode was done, reset the environment.
             if self.episode_is_done:
                 # print(f"Worker {self.worker_id}: Resetting environment.")
+                self.cumulative_episode_step.append(copy.deepcopy(self.episode_step))
+                self.episode_step = 0
                 self.last_obs, _, self.last_info = self.env.reset(episode_index=random.randint(0, 100))
             
             # 버퍼에 초기 액션 세팅 + 스텝
@@ -154,8 +158,6 @@ class RolloutWorker:
                 next_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate
             )
 
-            # CLI Logging
-            self.per_step_reward.append(reward.item())
             # if i % self.rollout_log_interval == 0 and i > 0:
             #     print(f"Worker {self.worker_id}: Collected {i} steps of rollout.")
             #     print(f"Mean Rewards : {sum(self.per_step_reward) / len(self.per_step_reward):.2f}")
@@ -167,6 +169,7 @@ class RolloutWorker:
             self.last_mask = ~done
             self.last_rec_states = rec_states
             self.episode_is_done = done.item()
+            self.episode_step += 1
         
         # --- After the loop, compute the value for the last state ---
         with torch.no_grad():
@@ -185,7 +188,7 @@ class RolloutWorker:
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
         
         # print(f"Worker {self.worker_id}: Finished sampling fragment.")
-        return buffer
+        return buffer, sum(self.cumulative_episode_step) / len(self.cumulative_episode_step)
 
 
     def set_weights(self, new_weights: dict):

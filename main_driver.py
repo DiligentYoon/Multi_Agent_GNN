@@ -111,17 +111,20 @@ def main(cfg: dict):
         # ============== Parallel Rollouts =================
         t1_rollout = time.time()
         rollout_futures = [worker.sample.remote() for worker in workers]
-        rollout_buffers = ray.get(rollout_futures)
+        results = ray.get(rollout_futures)
+        rollout_buffers, episode_steps = zip(*results)
         t2_rollout = time.time()
 
         # Perform learning updates using the collected data
         t1 = time.time()
         iter_v_loss, iter_a_loss, iter_d_entropy, iter_ratio = 0, 0, 0, 0
         iter_per_step_reward, iter_rollout_reward = 0, 0
-        for buffer in rollout_buffers:
+        iter_episode_steps = 0
+        for buffer, episode_step in zip(rollout_buffers, episode_steps):
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy, ratio = learner_agent.update(buffer.to(device))
             
+            iter_episode_steps += episode_step
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
             if value_loss > 0: # Assuming positive loss indicates a valid update
@@ -172,15 +175,16 @@ def main(cfg: dict):
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
             gif_path_viz_train = os.path.join(eval_dir, f"train_viz_iter_{iteration}.gif")
             print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
-            viz_simulation_test(cfg, steps=10, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
-            viz_simulation_test(cfg, steps=10, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
+            viz_simulation_test(cfg, steps=15, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            viz_simulation_test(cfg, steps=15, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
         
         # CLI Logging
         content_width = 64
         line_header = f"Training Iteration {iteration} Report"
         line_rollout_time = f"Rollout Time     : {t2_rollout - t1_rollout:6.2f} sec"
         line_train_time = f"Training Time    : {t2 - t1:6.2f} sec"
-        line_per_step_reward = f"Per-Step Rewards : {iter_per_step_reward / num_updates:6.2f}"
+        line_episode_step = f"Avg Episode Step      : {iter_episode_steps / num_updates:6.2f} steps"
+        line_per_step_reward = f"Per-Step Rewards   : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards  : {iter_rollout_reward / num_updates:6.2f}"
         line_ratio = f"Ratio                : {100 * iter_ratio / num_updates:6.2f} % "
         line_value_loss = f"Value Loss       : {iter_v_loss / num_updates:6.2f}"
@@ -191,9 +195,9 @@ def main(cfg: dict):
         print(f"|________________________________________________________________|")
         print(f"|{line_rollout_time:<{content_width}}|")
         print(f"|{line_train_time:<{content_width}}|")
+        print(f"|{line_episode_step:<{content_width}}|")
         print(f"|{line_per_step_reward:<{content_width}}|")
         print(f"|{line_rollout_reward:<{content_width}}|")
-        print(f"|{line_ratio:<{content_width}}|")
         print(f"|{line_value_loss:<{content_width}}|")
         print(f"|{line_policy_loss:<{content_width}}|")
         print(f"|________________________________________________________________|")

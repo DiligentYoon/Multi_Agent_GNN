@@ -133,11 +133,11 @@ class PPOAgent(Agent):
         # for key in cur_weight.keys():
         #     p = prev_weight[key]
         #     c = cur_weight[key]
-        #     if torch.sum((c-p).abs()) == 0:
+        #     if not torch.sum((c-p).abs()) == 0:
         #         zero_update += 1
         #         zero_keys.append(key)
         #     update_sum += torch.sum((c-p).abs())
-        # print("zero keys:")
+        # print("non zero keys:")
         # for k in zero_keys:
         #     print(" ", k)
             

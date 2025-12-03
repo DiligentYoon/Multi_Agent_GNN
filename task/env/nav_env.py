@@ -227,10 +227,10 @@ class NavEnv(Env):
         success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
         # Failure Penalty
         failure_penalty = -0.5 * coeff["success"] * np.astype(self.is_failure, np.float32)
-        # Connectivity Penalty
-        connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
+        # # Connectivity Penalty
+        # connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
-        return explored_reward + per_step_penalty + success_reward + connectivity_penalty + failure_penalty
+        return explored_reward + per_step_penalty + success_reward + failure_penalty
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

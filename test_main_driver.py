@@ -460,4 +460,4 @@ if __name__ == '__main__':
     run_simulation_test(config, 
                         steps=30, 
                         visualize=True,
-                        load_file_path='results/25-12-02_17-17-27_MARL/checkpoints/agent_19200.pt')
+                        load_file_path='results/25-12-02_22-23-07_MARL/checkpoints/agent_19200.pt')
