@@ -58,7 +58,6 @@ class PPOAgent(Agent):
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
-        ratio_epoch = 0
 
         # print("adv mean/std/min/max:", advantages.mean().item(), advantages.std().item(), advantages.min().item(), advantages.max().item())
 
@@ -128,7 +127,6 @@ class PPOAgent(Agent):
                 self.critic_optimizer.step()
 
                 if not augmentation:
-                    ratio_epoch += ratio.mean().item()
                     value_loss_epoch += value_loss.item()
                     action_loss_epoch += action_loss.item()
                     dist_entropy_epoch += dist_entropy.item()
@@ -140,9 +138,8 @@ class PPOAgent(Agent):
 
         num_updates = self.epoch * self.mini_batch_size
 
-        ratio_epoch /= num_updates
         value_loss_epoch /= num_updates
         action_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates
 
-        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, ratio_epoch
+        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch

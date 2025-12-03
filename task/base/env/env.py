@@ -147,6 +147,9 @@ class Env():
         self.num_step = 0
         self.reached_goal = np.zeros((self.cfg.num_agent, 1), dtype=np.bool_)
 
+        self.is_success = np.zeros(1, dtype=np.bool_)
+        self.is_failure = np.zeros(1, dtype=np.bool_)
+
         self.infos = {}
 
 

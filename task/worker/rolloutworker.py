@@ -66,6 +66,7 @@ class RolloutWorker:
 
         # --- Stateful variables for continuing episodes ---
         self.cumulative_episode_step = deque(maxlen=100)
+        self.is_success = deque(maxlen=50)
         self.episode_step = 0
         self.last_rec_states = None
         self.last_mask = None
@@ -88,7 +89,7 @@ class RolloutWorker:
                               eps=model_cfg['eps']).to(self.device)
 
 
-    def sample(self) -> tuple[CoMappingRolloutBuffer, float]:
+    def sample(self) -> tuple[CoMappingRolloutBuffer, float, float]:
         """
         Collects a fragment of experience of `rollout_fragment_length` steps.
         
@@ -113,7 +114,10 @@ class RolloutWorker:
         for i in range(self.rollout_fragment_length):
             # If the last episode was done, reset the environment.
             if self.episode_is_done:
-                # print(f"Worker {self.worker_id}: Resetting environment.")
+                if self.env.is_success:
+                    self.is_success.append(1)
+                else:
+                    self.is_success.append(0)
                 self.cumulative_episode_step.append(copy.deepcopy(self.episode_step))
                 self.episode_step = 0
                 self.last_obs, _, self.last_info = self.env.reset(episode_index=random.randint(0, 100))
@@ -188,7 +192,7 @@ class RolloutWorker:
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
         
         # print(f"Worker {self.worker_id}: Finished sampling fragment.")
-        return buffer, sum(self.cumulative_episode_step) / len(self.cumulative_episode_step)
+        return buffer, sum(self.cumulative_episode_step) / len(self.cumulative_episode_step), sum(self.is_success) / len(self.is_success)
 
 
     def set_weights(self, new_weights: dict):

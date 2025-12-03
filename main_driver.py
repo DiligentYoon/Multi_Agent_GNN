@@ -89,7 +89,6 @@ def main(cfg: dict):
     
     per_step_reward = deque(maxlen=100)
     rollout_reward = deque(maxlen=100)
-    ratios = deque(maxlen=100)
     value_losses = deque(maxlen=100)
     action_losses = deque(maxlen=100)
     dist_entropies = deque(maxlen=100)
@@ -112,23 +111,23 @@ def main(cfg: dict):
         t1_rollout = time.time()
         rollout_futures = [worker.sample.remote() for worker in workers]
         results = ray.get(rollout_futures)
-        rollout_buffers, episode_steps = zip(*results)
+        rollout_buffers, episode_steps, episode_success = zip(*results)
         t2_rollout = time.time()
 
         # Perform learning updates using the collected data
         t1 = time.time()
-        iter_v_loss, iter_a_loss, iter_d_entropy, iter_ratio = 0, 0, 0, 0
+        iter_v_loss, iter_a_loss, iter_d_entropy = 0, 0, 0
         iter_per_step_reward, iter_rollout_reward = 0, 0
-        iter_episode_steps = 0
-        for buffer, episode_step in zip(rollout_buffers, episode_steps):
+        iter_episode_steps, iter_episode_success = 0, 0
+        for buffer, episode_step, success in zip(rollout_buffers, episode_steps, episode_success):
             # The buffer from the worker already has returns computed.
-            value_loss, action_loss, dist_entropy, ratio = learner_agent.update(buffer.to(device))
+            value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
+            iter_episode_success += success * 2 # switch to percentage
             iter_episode_steps += episode_step
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
             if value_loss > 0: # Assuming positive loss indicates a valid update
-                iter_ratio += ratio
                 iter_v_loss += value_loss
                 iter_a_loss += action_loss
                 iter_d_entropy += dist_entropy
@@ -139,7 +138,6 @@ def main(cfg: dict):
         if num_updates > 0:
             per_step_reward.append(iter_per_step_reward / num_updates)
             rollout_reward.append(iter_rollout_reward / num_updates)
-            ratios.append(iter_ratio / num_updates)
             value_losses.append(iter_v_loss / num_updates)
             action_losses.append(iter_a_loss / num_updates)
             dist_entropies.append(iter_d_entropy / num_updates)
@@ -150,14 +148,12 @@ def main(cfg: dict):
         if iteration % cfg['agent']['experiment']['write_interval'] == 0 and len(value_losses) > 0:
             mean_per_step_reward = np.mean(per_step_reward)
             mean_rollout_reward = np.mean(rollout_reward)
-            mean_ratio = 100 * np.mean(ratios)
             mean_v_loss = np.mean(value_losses)
             mean_a_loss = np.mean(action_losses)
             mean_d_entropy = np.mean(dist_entropies)
             
             writer.add_scalar('Reward/Per_step', mean_per_step_reward, global_step)
             writer.add_scalar('Reward/Rollout', mean_rollout_reward, global_step)
-            writer.add_scalar('Policy/Ratio', mean_ratio, global_step)
             writer.add_scalar('Loss/Value', mean_v_loss, global_step)
             writer.add_scalar('Loss/Action', mean_a_loss, global_step)
             writer.add_scalar('Loss/Entropy', mean_d_entropy, global_step)
@@ -167,7 +163,6 @@ def main(cfg: dict):
             learner_agent.model.save(checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
         
-
         # Evaluation and Visualization
         if iteration % cfg['train']['eval_freq'] == 0:
             eval_dir = os.path.join(experiment_dir, "eval")
@@ -175,31 +170,34 @@ def main(cfg: dict):
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
             gif_path_viz_train = os.path.join(eval_dir, f"train_viz_iter_{iteration}.gif")
             print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
-            viz_simulation_test(cfg, steps=15, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
-            viz_simulation_test(cfg, steps=15, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
+            viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            viz_simulation_test(cfg, steps=20, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
         
         # CLI Logging
         content_width = 64
         line_header = f"Training Iteration {iteration} Report"
-        line_rollout_time = f"Rollout Time     : {t2_rollout - t1_rollout:6.2f} sec"
-        line_train_time = f"Training Time    : {t2 - t1:6.2f} sec"
-        line_episode_step = f"Avg Episode Step      : {iter_episode_steps / num_updates:6.2f} steps"
-        line_per_step_reward = f"Per-Step Rewards   : {iter_per_step_reward / num_updates:6.2f}"
-        line_rollout_reward = f"Rollout Rewards  : {iter_rollout_reward / num_updates:6.2f}"
-        line_ratio = f"Ratio                : {100 * iter_ratio / num_updates:6.2f} % "
-        line_value_loss = f"Value Loss       : {iter_v_loss / num_updates:6.2f}"
-        line_policy_loss = f"Policy Loss      : {iter_a_loss / num_updates:6.2f}"
+        line_rollout_time = f"Rollout Time      : {t2_rollout - t1_rollout:6.2f} sec"
+        line_train_time = f"Training Time     : {t2 - t1:6.2f} sec"
+        line_episode_step = f"Avg Episode Step  : {iter_episode_steps / num_updates:6.2f} steps"
+        line_episode_success = f"Avg Success Ratio : {iter_episode_success / num_updates:6.2f} %"
+        line_per_step_reward = f"Per-Step Rewards  : {iter_per_step_reward / num_updates:6.2f}"
+        line_rollout_reward = f"Rollout Rewards   : {iter_rollout_reward / num_updates:6.2f}"
+        line_value_loss = f"Value Loss        : {iter_v_loss / num_updates:6.2f}"
+        line_policy_loss = f"Policy Loss       : {iter_a_loss / num_updates:6.2f}"
         
         print(f" ________________________________________________________________")
+        print(f"|                                                                |")
         print(f"|{line_header.center(content_width)}|")
         print(f"|________________________________________________________________|")
-        print(f"|{line_rollout_time:<{content_width}}|")
-        print(f"|{line_train_time:<{content_width}}|")
-        print(f"|{line_episode_step:<{content_width}}|")
-        print(f"|{line_per_step_reward:<{content_width}}|")
-        print(f"|{line_rollout_reward:<{content_width}}|")
-        print(f"|{line_value_loss:<{content_width}}|")
-        print(f"|{line_policy_loss:<{content_width}}|")
+        print(f"|                                                                |")
+        print(f"| {line_rollout_time:<{content_width-1}}|")
+        print(f"| {line_train_time:<{content_width-1}}|")
+        print(f"| {line_episode_step:<{content_width-1}}|")
+        print(f"| {line_episode_success:<{content_width-1}}|")
+        print(f"| {line_per_step_reward:<{content_width-1}}|")
+        print(f"| {line_rollout_reward:<{content_width-1}}|")
+        print(f"| {line_value_loss:<{content_width-1}}|")
+        print(f"| {line_policy_loss:<{content_width-1}}|")
         print(f"|________________________________________________________________|")
 
     # --- Cleanup ---
