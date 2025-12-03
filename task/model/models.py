@@ -351,7 +351,7 @@ class Actor(nn.Module):
         else:
             idxs, phidxs, ghidxs, dist, desc0s, desc1s, desc2s, desc3s = self.kenc(inputs, dist, pos_history, goal_history, extras[:, :, :2])
 
-        if torch.isfinite(torch.cat(dist)).all() == False:
+        if torch.isfinite(torch.cat(dist, dim=-1)).all() == False:
             print("[NaN] dist has NaN/inf")
             raise RuntimeError
 

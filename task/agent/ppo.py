@@ -118,6 +118,12 @@ class PPOAgent(Agent):
                 
                 torch.nn.utils.clip_grad_norm_(self.model.network.actor.parameters(), self.grad_norm_clip)
                 torch.nn.utils.clip_grad_norm_(self.model.network.critic.parameters(), self.grad_norm_clip)
+
+                for name, p in self.model.network.named_parameters():
+                    if p.grad is not None and not torch.isfinite(p.grad).all():
+                        print(f"[NaN GRAD] {name} grad has NaN/Inf")
+                        raise RuntimeError
+
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
 
@@ -141,6 +147,12 @@ class PPOAgent(Agent):
         # print("non zero keys:")
         # for k in zero_keys:
         #     print(" ", k)
+        for k, v in self.model.network.state_dict().items():
+            if torch.isnan(v).any():
+                print(f"{k} layer is nan after parameter update")
+                print(f"{k} layer grad norm : {v.grad.data.norm(2)}")
+                raise RuntimeError
+
             
         num_updates = self.epoch * self.mini_batch_size
 
