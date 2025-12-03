@@ -320,11 +320,6 @@ class AttentionalGNN(nn.Module):
         scores = (scores - scores.mean(dim=(1, 2))) / (scores.std(dim=(1, 2)) + 1e-3) # normalization
         scores = log_optimal_transport(scores, self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
 
-        if not torch.isfinite(scores).all():
-            print("[NaN] scores AFTER OT has NaN/inf")
-            print(scores)
-            raise RuntimeError
-
         score_min = scores.min() - scores.max()
         # scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
         scores = scores + score_min
@@ -355,6 +350,10 @@ class Actor(nn.Module):
             ]
         else:
             idxs, phidxs, ghidxs, dist, desc0s, desc1s, desc2s, desc3s = self.kenc(inputs, dist, pos_history, goal_history, extras[:, :, :2])
+
+        if torch.isfinite(torch.cat(dist)).all() == False:
+            print("[NaN] dist has NaN/inf")
+            raise RuntimeError
 
         # Multi-layer Transformer network.
         return [self.gnn(desc0s[b], desc1s[b], desc2s[b], desc3s[b], extras[b, :, 2:], idxs[b], phidxs[b], ghidxs[b], dist[b], unreachable[b]) for b in range(inputs.size(0))]
