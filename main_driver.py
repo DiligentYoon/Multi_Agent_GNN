@@ -117,7 +117,7 @@ def main(cfg: dict, args: argparse.Namespace):
         t1_rollout = time.time()
         rollout_futures = [worker.sample.remote() for worker in workers]
         results = ray.get(rollout_futures)
-        rollout_buffers, episode_steps, episode_success = zip(*results)
+        rollout_buffers, rollout_infos = zip(*results)
         t2_rollout = time.time()
 
         # Perform learning updates using the collected data
@@ -125,12 +125,14 @@ def main(cfg: dict, args: argparse.Namespace):
         iter_v_loss, iter_a_loss, iter_d_entropy = 0, 0, 0
         iter_per_step_reward, iter_rollout_reward = 0, 0
         iter_episode_steps, iter_episode_success = 0, 0
-        for buffer, episode_step, success in zip(rollout_buffers, episode_steps, episode_success):
+        iter_coverage_rate = 0
+        for buffer, rollout_info in zip(rollout_buffers, rollout_infos):
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
-            iter_episode_success += success * 2 # switch to percentage
-            iter_episode_steps += episode_step
+            iter_episode_success += rollout_info['success_rate'] * 2 # switch to percentage
+            iter_episode_steps += rollout_info['episode_step']
+            iter_coverage_rate += rollout_info['coverage_rate']
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
             if value_loss > 0: # Assuming positive loss indicates a valid update
@@ -179,13 +181,13 @@ def main(cfg: dict, args: argparse.Namespace):
             viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
             viz_simulation_test(cfg, steps=20, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
         
-        # CLI Logging
+        # CLI Logging about the training process
         content_width = 64
         line_header = f"Training Iteration {iteration} Report"
         line_rollout_time = f"Rollout Time      : {t2_rollout - t1_rollout:6.2f} sec"
         line_train_time = f"Training Time     : {t2 - t1:6.2f} sec"
         line_episode_step = f"Avg Episode Step  : {iter_episode_steps / num_updates:6.2f} steps"
-        line_episode_success = f"Avg Success Ratio : {iter_episode_success / num_updates:6.2f} %"
+        line_episode_success = f"Avg Success Rate  : {iter_episode_success / num_updates:6.2f} %"
         line_per_step_reward = f"Per-Step Rewards  : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards   : {iter_rollout_reward / num_updates:6.2f}"
         line_value_loss = f"Value Loss        : {iter_v_loss / num_updates:6.2f}"
@@ -205,6 +207,18 @@ def main(cfg: dict, args: argparse.Namespace):
         print(f"| {line_value_loss:<{content_width-1}}|")
         print(f"| {line_policy_loss:<{content_width-1}}|")
         print(f"|________________________________________________________________|")
+
+
+        # CLI Logging about the environment information
+        line_header_env = f"Environment Information Report"
+        line_converage_rate = f"Coverage Rate   : {iter_coverage_rate / num_updates:6.2f} %"
+        print(f"|                                                                |")
+        print(f"|{line_header_env.center(content_width)}|")
+        print(f"|________________________________________________________________|")
+        print(f"|                                                                |")
+        print(f"| {line_converage_rate:<{content_width-1}}|")
+        print(f"|________________________________________________________________|")
+
 
     # --- Cleanup ---
     writer.close()

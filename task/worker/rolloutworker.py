@@ -66,6 +66,7 @@ class RolloutWorker:
 
         # --- Stateful variables for continuing episodes ---
         self.cumulative_episode_step = deque(maxlen=100)
+        self.coverage_rate = deque(maxlen=100)
         self.is_success = deque(maxlen=50)
         self.episode_step = 0
         self.last_rec_states = None
@@ -89,7 +90,7 @@ class RolloutWorker:
                               eps=model_cfg['eps']).to(self.device)
 
 
-    def sample(self) -> tuple[CoMappingRolloutBuffer, float, float]:
+    def sample(self) -> tuple[CoMappingRolloutBuffer, dict[str, float]]:
         """
         Collects a fragment of experience of `rollout_fragment_length` steps.
         
@@ -118,6 +119,7 @@ class RolloutWorker:
                     self.is_success.append(1)
                 else:
                     self.is_success.append(0)
+                self.coverage_rate.append(100 * self.env.prev_explored_region / (self.env.map_info.H * self.env.map_info.W))
                 self.cumulative_episode_step.append(copy.deepcopy(self.episode_step))
                 self.episode_step = 0
                 self.last_obs, _, self.last_info = self.env.reset(episode_index=random.randint(0, 100))
@@ -190,9 +192,19 @@ class RolloutWorker:
                 )[0]
         
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
+
+        episode_step = sum(self.cumulative_episode_step) / len(self.cumulative_episode_step)
+        success_rate = sum(self.is_success) / len(self.is_success)
+        coverage_rate = sum(self.coverage_rate) / len(self.coverage_rate)
+
+        additional_info = {
+            "episode_step": episode_step,
+            "success_rate": success_rate,
+            "coverage_rate": coverage_rate
+        }
         
         # print(f"Worker {self.worker_id}: Finished sampling fragment.")
-        return buffer, sum(self.cumulative_episode_step) / len(self.cumulative_episode_step), sum(self.is_success) / len(self.is_success)
+        return buffer, additional_info
 
 
     def set_weights(self, new_weights: dict):

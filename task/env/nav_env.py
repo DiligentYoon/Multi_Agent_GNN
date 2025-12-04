@@ -81,6 +81,9 @@ class NavEnv(Env):
         self.cbf_infos = {}
         self.cbf_infos["safety"] = {}
         self.cbf_infos["nominal"] = {}
+
+        # Reward Related
+        self.prev_explored_region = 0
     
         # TODO: deleted later
         self.num_frontiers = np.zeros(self.num_agent, dtype=np.int_)
