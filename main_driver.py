@@ -14,6 +14,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+import argparse
 import yaml
 import time
 import torch
@@ -33,7 +34,7 @@ from task.model.models import RL_ActorCritic
 from test_main_driver import viz_simulation_test
 import gymnasium as gym
 
-def main(cfg: dict):
+def main(cfg: dict, args: argparse.Namespace):
     # --- Setup ---
     torch.manual_seed(cfg['env']['seed'])
     np.random.seed(cfg['env']['seed'])
@@ -76,6 +77,11 @@ def main(cfg: dict):
                                    eps=model_cfg['eps']).to(device)
     learner_agent = PPOAgent(learner_model, device, cfg['agent'])
     print("Central learner agent created.")
+
+    if args.checkpoint is not None:
+        file_path = args.checkpoint
+        learner_agent.model.load(file_path, device)
+        print(f"Loaded checkpoint from {file_path}")
 
     # --- Create Rollout Workers ---
     num_workers = cfg['ray']['num_workers']
@@ -210,4 +216,8 @@ if __name__ == '__main__':
     with open("config/nav_ppo_cfg.yaml", 'r') as f:
         cfg = yaml.safe_load(f)
     
-    main(cfg)
+    parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+
+    args = parser.parse_args()
+    main(cfg, args)
