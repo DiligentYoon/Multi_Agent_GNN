@@ -317,7 +317,7 @@ class AttentionalGNN(nn.Module):
             print(scores)
             raise RuntimeError
 
-        scores = scores.log_softmax(dim=-1)
+        scores = scores.log_softmax(dim=-1).view(unreachable.shape)
         # scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
 
         # score_min = scores.min() - scores.max()
