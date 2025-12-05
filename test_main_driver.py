@@ -264,9 +264,9 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
         print(f"RL Step: {step_num+1}/{steps}")
 
         # 시점 transition
-        obs = next_obs
-        info = next_info
-        mask = ~done
+        obs = copy.deepcopy(next_obs)
+        info = copy.deepcopy(next_info)
+        mask = copy.deepcopy(~done)
         
         if done:
             print("Episode finished.")
@@ -461,4 +461,4 @@ if __name__ == '__main__':
     run_simulation_test(config, 
                         steps=30, 
                         visualize=True,
-                        load_file_path='results/25-12-02_22-23-07_MARL/checkpoints/agent_4800.pt')
+                        load_file_path=None)

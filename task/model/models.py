@@ -371,7 +371,7 @@ class GNN(nn.Module):
         self.actor = Actor(desc_dim, gnn_layers, use_history, ablation)
 
         self.critic_encoder = nn.Sequential(
-            nn.Conv2d(6, 64, 6, stride=2, padding=2),
+            nn.Conv2d(6, 64, 6, stride=(1, 2), padding=2),
             # nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 128, 6, stride=2, padding=2),
@@ -380,7 +380,7 @@ class GNN(nn.Module):
             nn.Conv2d(128, 128, 5, stride=1, padding=2),
             # nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
-            nn.Conv2d(128, 64, 6, stride=2, padding=2),
+            nn.Conv2d(128, 64, 6, stride=1, padding=2),
             # nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 16, 5, stride=1, padding=2),
