@@ -159,7 +159,6 @@ class ObservationManager:
         global_input = nn.MaxPool2d(self.pooling_downsampling)(self.global_map)
         global_input[6, :, :] -= global_input[2, :, :]
         global_input[7, :, :] = g_history
-        global_input[1, :, :][global_input[2, :, :] > 0] = 1
         dist_input = torch.zeros((self.num_robots, self.global_map_h, self.global_map_w))
         obstacle = self.global_map[0, :, :].bool()
 
