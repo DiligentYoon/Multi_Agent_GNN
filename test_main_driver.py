@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import imageio
 import gymnasium as gym
 import datetime
+import copy
 
 from torch.utils.tensorboard import SummaryWriter
 from collections import deque
@@ -213,7 +214,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
                                                             rec_states,
                                                             mask,
                                                             info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
-                                                            deterministic=False)
+                                                            deterministic=True)
 
         # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
@@ -433,9 +434,9 @@ def viz_simulation_test(cfg: dict,
             cbf_history[j].append(agent_cbf_info)
 
         # 시점 transition
-        obs = next_obs
-        info = next_info
-        mask = ~done
+        obs = copy.deepcopy(next_obs)
+        info = copy.deepcopy(next_info)
+        mask = copy.deepcopy(~done)
         
         if done:
             break
@@ -460,4 +461,4 @@ if __name__ == '__main__':
     run_simulation_test(config, 
                         steps=30, 
                         visualize=True,
-                        load_file_path='results/25-12-02_22-23-07_MARL/checkpoints/agent_19200.pt')
+                        load_file_path='results/25-12-02_22-23-07_MARL/checkpoints/agent_4800.pt')

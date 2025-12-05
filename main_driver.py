@@ -61,9 +61,8 @@ def main(cfg: dict, args: argparse.Namespace):
     temp_H, temp_W = eval_env.map_info.H, eval_env.map_info.W 
     observation_space = gym.spaces.Box(0, 1, (8 + num_agents, temp_H // pr, temp_W // pr), dtype='uint8')
     action_space = gym.spaces.Box(0, (temp_H // pr) * (temp_W // pr) - 1, (num_agents,), dtype='int32')
+    del eval_env
     
-
-
     model_cfg = cfg['model']
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
@@ -130,7 +129,7 @@ def main(cfg: dict, args: argparse.Namespace):
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
-            iter_episode_success += rollout_info['success_rate'] * 2 # switch to percentage
+            iter_episode_success += rollout_info['success_rate'] # switch to percentage
             iter_episode_steps += rollout_info['episode_step']
             iter_coverage_rate += rollout_info['coverage_rate']
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
@@ -187,7 +186,7 @@ def main(cfg: dict, args: argparse.Namespace):
         line_rollout_time = f"Rollout Time      : {t2_rollout - t1_rollout:6.2f} sec"
         line_train_time = f"Training Time     : {t2 - t1:6.2f} sec"
         line_episode_step = f"Avg Episode Step  : {iter_episode_steps / num_updates:6.2f} steps"
-        line_episode_success = f"Avg Success Rate  : {iter_episode_success / num_updates:6.2f} %"
+        line_episode_success = f"Avg Success Rate  : {100 * iter_episode_success / num_updates:6.2f} %"
         line_per_step_reward = f"Per-Step Rewards  : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards   : {iter_rollout_reward / num_updates:6.2f}"
         line_value_loss = f"Value Loss        : {iter_v_loss / num_updates:6.2f}"
@@ -211,7 +210,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
         # CLI Logging about the environment information
         line_header_env = f"Environment Information Report"
-        line_converage_rate = f"Coverage Rate   : {iter_coverage_rate / num_updates:6.2f} %"
+        line_converage_rate = f"Coverage Rate   : {100 * iter_coverage_rate / num_updates:6.2f} %"
         print(f"|                                                                |")
         print(f"|{line_header_env.center(content_width)}|")
         print(f"|________________________________________________________________|")
