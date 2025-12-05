@@ -193,14 +193,18 @@ class RolloutWorker:
         
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
 
-        episode_step = sum(self.cumulative_episode_step) / len(self.cumulative_episode_step)
-        success_rate = sum(self.is_success) / len(self.is_success)
-        coverage_rate = sum(self.coverage_rate) / len(self.coverage_rate)
+        # Avoid division by zero if deques are empty
+        if len(self.cumulative_episode_step) > 0:
+            episode_step = sum(self.cumulative_episode_step) / len(self.cumulative_episode_step)
+        else:
+            episode_step = 0
 
+        # Return raw counts for global aggregation instead of local averages
         additional_info = {
             "episode_step": episode_step,
-            "success_rate": success_rate,
-            "coverage_rate": coverage_rate
+            "total_successes": sum(self.is_success),
+            "episodes_completed": len(self.is_success),
+            "total_coverage": sum(self.coverage_rate),
         }
         
         # print(f"Worker {self.worker_id}: Finished sampling fragment.")

@@ -231,9 +231,9 @@ class NavEnv(Env):
         # Failure Penalty
         failure_penalty = -0.5 * coeff["success"] * np.astype(self.is_failure, np.float32)
         # # Connectivity Penalty
-        # connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
+        connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
-        return explored_reward + per_step_penalty + success_reward + failure_penalty
+        return explored_reward + per_step_penalty + success_reward + failure_penalty + connectivity_penalty
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -294,7 +294,8 @@ class NavEnv(Env):
         
         # 성공 & 실패 유무
         self.is_success = np.any(reached_goal)
-        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        # self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
         terminated = copy.deepcopy(self.is_success | self.is_failure)
@@ -350,7 +351,7 @@ class NavEnv(Env):
 
     def _update_infos(self):
         infos = copy.deepcopy(self.infos)
-        infos["additional_obs"] = self.obs_manager.global_info
+        infos["additional_obs"] = copy.deepcopy(self.obs_manager.global_info)
 
         return infos
 

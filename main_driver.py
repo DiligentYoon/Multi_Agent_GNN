@@ -123,15 +123,24 @@ def main(cfg: dict, args: argparse.Namespace):
         t1 = time.time()
         iter_v_loss, iter_a_loss, iter_d_entropy = 0, 0, 0
         iter_per_step_reward, iter_rollout_reward = 0, 0
-        iter_episode_steps, iter_episode_success = 0, 0
-        iter_coverage_rate = 0
+        
+        # Accumulators for true global metrics
+        total_episodes_completed = 0
+        total_successes = 0
+        total_coverage = 0.0
+        # NOTE: episode_step is still an average of local averages, but more accurate than before
+        total_avg_episode_steps = 0.0
+
         for buffer, rollout_info in zip(rollout_buffers, rollout_infos):
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
-            iter_episode_success += rollout_info['success_rate'] # switch to percentage
-            iter_episode_steps += rollout_info['episode_step']
-            iter_coverage_rate += rollout_info['coverage_rate']
+            # Aggregate raw counts from each worker
+            total_successes += rollout_info.get('total_successes', 0)
+            total_episodes_completed += rollout_info.get('episodes_completed', 0)
+            total_coverage += rollout_info.get('total_coverage', 0)
+            total_avg_episode_steps += rollout_info.get('episode_step', 0)
+
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
             if value_loss > 0: # Assuming positive loss indicates a valid update
@@ -175,17 +184,24 @@ def main(cfg: dict, args: argparse.Namespace):
             eval_dir = os.path.join(experiment_dir, "eval")
             os.makedirs(eval_dir, exist_ok=True)
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
+            gif_path_viz_train = os.path.join(eval_dir, f"train_viz_iter_{iteration}.gif")
             print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
-            c_rate, t_reward = viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
-            print(f"Coverage Rate / Total Reward : {c_rate:.2f} / {t_reward:.2f}")
+            viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            viz_simulation_test(cfg, steps=20, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
         
+        # Calculate true global averages for logging
+        num_workers = num_updates
+        global_success_rate = (total_successes / total_episodes_completed) if total_episodes_completed > 0 else 0
+        global_coverage_rate = (total_coverage / total_episodes_completed) if total_episodes_completed > 0 else 0
+        global_avg_episode_steps = total_avg_episode_steps / num_workers if num_workers > 0 else 0
+
         # CLI Logging about the training process
         content_width = 64
         line_header = f"Training Iteration {iteration} Report"
         line_rollout_time = f"Rollout Time      : {t2_rollout - t1_rollout:6.2f} sec"
         line_train_time = f"Training Time     : {t2 - t1:6.2f} sec"
-        line_episode_step = f"Avg Episode Step  : {iter_episode_steps / num_updates:6.2f} steps"
-        line_episode_success = f"Avg Success Rate  : {100 * iter_episode_success / num_updates:6.2f} %"
+        line_episode_step = f"Avg Episode Step  : {global_avg_episode_steps:6.2f} steps"
+        line_episode_success = f"Avg Success Rate  : {100 * global_success_rate:6.2f} %"
         line_per_step_reward = f"Per-Step Rewards  : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards   : {iter_rollout_reward / num_updates:6.2f}"
         line_value_loss = f"Value Loss        : {iter_v_loss / num_updates:6.2f}"
@@ -209,7 +225,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
         # CLI Logging about the environment information
         line_header_env = f"Environment Information Report"
-        line_converage_rate = f"Coverage Rate   : {100 * iter_coverage_rate / num_updates:6.2f} %"
+        line_converage_rate = f"Coverage Rate   : {100 * global_coverage_rate:6.2f} %"
         print(f"|                                                                |")
         print(f"|{line_header_env.center(content_width)}|")
         print(f"|________________________________________________________________|")

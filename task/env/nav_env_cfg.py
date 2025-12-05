@@ -31,7 +31,7 @@ class NavEnvCfg(EnvCfg):
             "exploration": 0.0005,
             "success": 5.0,
             "per_step": 0.1,
-            "connectivity": 1.0
+            "connectivity": 0.1
         }
 
 
