@@ -96,6 +96,6 @@ model:
     
 # Training Settings
 train:
-  eval_freq: 10
+  eval_freq: 25
   max_episode: 1000
   timesteps: 5000000
