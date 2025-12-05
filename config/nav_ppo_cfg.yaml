@@ -74,7 +74,7 @@ agent:
   policy_loss_coef: 2.0
 
   buffer:
-    rollout: 16
+    rollout: 8
 
   experiment:
     directory: "MARL"
@@ -96,6 +96,6 @@ model:
     
 # Training Settings
 train:
-  eval_freq: 25
+  eval_freq: 10
   max_episode: 1000
   timesteps: 5000000
