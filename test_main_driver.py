@@ -384,6 +384,7 @@ def viz_simulation_test(cfg: dict,
     rec_states = buffer.rec_states[0][l:h]
     mask = buffer.masks[0][l:h]
 
+    total_reward = 0
     for step_num in range(steps):
 
         with torch.no_grad():
@@ -397,20 +398,6 @@ def viz_simulation_test(cfg: dict,
         # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
         done = torch.logical_or(terminated, truncated)
-
-        # 시점 t+1에서의 observation, rec_states, addtional_info 
-        # 시점 t에서의 action 저장
-        # 시점 t+1에서의 reward, done 저장
-        buffer.insert(
-            # obs_t+1, rec_state_t+1
-            next_obs.view(1, *observation_space.shape), rec_states,
-            # action_t, action_log_t, value_t
-            actions, action_log_probs, values,
-            # reward_t+1, done_t+1
-            reward, ~done,
-            # info_t+1
-            next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
-        )
 
         for j in range(num_agents):
             # Obstacle distance for CBF plot
@@ -433,6 +420,9 @@ def viz_simulation_test(cfg: dict,
                                 "agent_conn": env.neighbor_radius**2 - min_agent_dist}
             cbf_history[j].append(agent_cbf_info)
 
+        # 데이터 집계
+        total_reward += reward.item()
+
         # 시점 transition
         obs = copy.deepcopy(next_obs)
         info = copy.deepcopy(next_info)
@@ -445,6 +435,10 @@ def viz_simulation_test(cfg: dict,
     # --- Save GIF ---
     print(f"GIF saved at step {step_num+1}.")
     imageio.mimsave(gif_path, frames, fps=20)
+
+    coverage_rate = 100 * env.prev_explored_region / (env.map_info.H * env.map_info.W)
+
+    return total_reward, coverage_rate
 
 
 

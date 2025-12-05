@@ -175,10 +175,9 @@ def main(cfg: dict, args: argparse.Namespace):
             eval_dir = os.path.join(experiment_dir, "eval")
             os.makedirs(eval_dir, exist_ok=True)
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
-            gif_path_viz_train = os.path.join(eval_dir, f"train_viz_iter_{iteration}.gif")
             print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
-            viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
-            viz_simulation_test(cfg, steps=20, is_train=True, gif_path=gif_path_viz_train, agent_model=learner_agent.model)
+            c_rate, t_reward = viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            print(f"Coverage Rate / Total Reward : {c_rate:.2f} / {t_reward:.2f}")
         
         # CLI Logging about the training process
         content_width = 64
