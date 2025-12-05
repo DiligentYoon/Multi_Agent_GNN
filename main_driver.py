@@ -171,7 +171,7 @@ def main(cfg: dict, args: argparse.Namespace):
             print(f"Checkpoint saved to {checkpoint_path}")
         
         # Evaluation and Visualization
-        if iteration % cfg['train']['eval_freq'] == 0:
+        if iteration % cfg['train']['eval_freq'] == 0 or iteration == 1:
             eval_dir = os.path.join(experiment_dir, "eval")
             os.makedirs(eval_dir, exist_ok=True)
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
