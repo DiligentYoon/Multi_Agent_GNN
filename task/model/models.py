@@ -256,7 +256,6 @@ class AttentionalGNN(nn.Module):
             dist0 = dist.view(-1, desc1.size(-1), desc0.size(-1)).transpose(1, 2).reshape(1, -1, desc1.size(-1) * desc0.size(-1))
             dist1 = dist
 
-
             for idx, attn, phattn, ghattn, name in zip(range(len(self.names)), self.attn, self.phattn, self.ghattn, self.names):
 
                 if name == 'cross':
@@ -319,12 +318,12 @@ class AttentionalGNN(nn.Module):
 
         # scores = scores.log_softmax(dim=-2).view(unreachable.shape)
         # scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
-        scores = scores.log_softmax(dim=-2).view(unreachable.shape) * 0.1
-        # score_min = scores.min() - scores.max()
-        # # scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
+        scores = scores.log_softmax(dim=-2).view(unreachable.shape)
+        score_min = scores.min() - scores.max()
+        scores = scores + (score_min - 20) * unreachable.float()
         # scores = scores + score_min
 
-        return scores
+        return scores * 0.05
 
 
 class Actor(nn.Module):
@@ -338,7 +337,7 @@ class Actor(nn.Module):
         # MLP encoder.
         extras = extras.view(inputs.size(0), -1, 6)
         unreachable = [
-            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) > 1e5
+            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) >= 40
             for b in range(inputs.size(0))
         ]
 

@@ -119,6 +119,7 @@ class ObservationManager:
         Global Map & Global Pose 업데이트 수행 (Global Map에서 누적의 의미를 갖는 채널들도 업데이트)
 
             Inputs:
+                robot_pos: [x, y]
                 obstacle: Binary Obstacle Map
                 frontier: Binary Frontier Map
                 explored: Binary Explored Map
@@ -176,12 +177,12 @@ class ObservationManager:
             distance_field(dist_input[i, :, :], obstacle, optimized=(row, col))
 
         dist_input = dist_input.to(self.device)
-        dist_input[self.global_map[1:2, :, :].repeat(self.num_robots, 1, 1) == 0] = 4
+        dist_input[self.global_map[1:2, :, :].repeat(self.num_robots, 1, 1) == 0] = 40
         for i in range(self.num_robots):
             agent_cell_pos = self.world_to_grid_np(self.global_pose[i, :2]).reshape(-1)
-            dist_input[i, agent_cell_pos[1], agent_cell_pos[0]] = 4
+            dist_input[i, agent_cell_pos[1], agent_cell_pos[0]] = 40
         dist_input = -nn.MaxPool2d(self.pooling_downsampling)(-dist_input)
-        dist_input[dist_input > 4] = 4
+        dist_input[dist_input > 40] = 40
         global_input = torch.cat((global_input, dist_input), dim=0) # dim: [8 + Num_Agent, H, W]
 
         return global_input

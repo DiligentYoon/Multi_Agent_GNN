@@ -726,7 +726,7 @@ def distance_field(input, DT_target, optimized=()):
         
         DT_target = DT_target[ex1:ex2, ey1:ey2]
         goal_mask = input[ex1:ex2, ey1:ey2] > 0
-        input.fill_(4)
+        input.fill_(40)
         input = input[ex1:ex2, ey1:ey2]
     else:
         goal_mask = input > 0
@@ -736,4 +736,4 @@ def distance_field(input, DT_target, optimized=()):
     traversible_ma = np.ma.masked_values(traversible, 0)
     traversible_ma[goal_mask] = 0
     df = skfmm.distance(traversible_ma, dx=0.01)
-    input.copy_(torch.from_numpy(np.ma.filled(df, 4)))
+    input.copy_(torch.from_numpy(np.ma.filled(df, 40)))
