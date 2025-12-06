@@ -85,7 +85,7 @@ agent:
 model:
   # Model Configuration
   model_type: gnn
-  num_gnn_layer: 3
+  num_gnn_layer: 1
   use_history: true
   ablation: false
 

@@ -236,7 +236,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
 
         print(f"Frontier Index: {actions.cpu().numpy()}")
         print(f"Reward : {reward.item():.2f}")
-        print(f'# of frontier (obs) : { torch.nonzero(next_obs[1, :, :]).shape[0] }')
+        print(f'# of frontier (obs) : { torch.nonzero(obs[1, :, :]).shape[0] }')
 
         # --- Record data for final plots (once per RL step) ---
         if visualize:
@@ -453,6 +453,6 @@ if __name__ == '__main__':
     
     # Run the test with visualization enabled
     run_simulation_test(config, 
-                        steps=1, 
+                        steps=20, 
                         visualize=True,
                         load_file_path=None)

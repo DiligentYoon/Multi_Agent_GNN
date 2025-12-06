@@ -33,8 +33,10 @@ class Encoder(nn.Module):
     """ Joint encoding of semantic tag and location using MLPs"""
     def __init__(self, feature_dim, layers):
         super().__init__()
-        self.encoder = MLP([4] + layers + [feature_dim])
-        nn.init.constant_(self.encoder[-1].bias, 0.0)
+        self.frontier_encoder = MLP([4] + layers + [feature_dim])
+        self.agent_encoder = MLP([4] + layers + [feature_dim])
+        nn.init.constant_(self.frontier_encoder[-1].bias, 0.0)
+        nn.init.constant_(self.agent_encoder[-1].bias, 0.0)
         self.dist_encoder = MLP([1, feature_dim, feature_dim])
 
     def forward(self, inputs, dist, pos_history, goal_history, extras):
@@ -52,9 +54,23 @@ class Encoder(nn.Module):
         ghistory_batches = []
         for b in range(inputs.size(0)):
             frontier = torch.nonzero(inputs[b, :, :])
+
+            if frontier.size(0) > 0:
+                # Extract distance features in a structured way (n_agent, n_frontier)
+                dist_structured = dist[b, :, :, :][(inputs[b, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1)
+
+                # --- SHUFFLE LOGIC to break index-based bias ---
+                perm = torch.randperm(frontier.size(0), device=frontier.device)
+                frontier = frontier[perm]
+                dist_structured = dist_structured[:, perm]
+                # --- END SHUFFLE ---
+                
+                # Now, proceed with the log-normalized and flattened distance features
+                dist_feat = torch.log1p(dist_structured.reshape(1, 1, -1))
+            else:
+                dist_feat = torch.empty(1, 1, 0, device=inputs.device)
+
             frontier_idxs.append(frontier)
-            # dist_feat: n_agent x frontier
-            dist_feat = dist[b, :, :, :][(inputs[b, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(1, 1, dist.size(1) * frontier.size(0))
             dist_batches.append(dist_feat)
             
             pts = inputs.new_zeros((1, frontier.size(0), 4))
@@ -98,45 +114,14 @@ class Encoder(nn.Module):
             phistory_idxs if pos_history is not None else ([None] * len(frontier_idxs)),
             ghistory_idxs if goal_history is not None else ([None] * len(frontier_idxs)),
             [self.dist_encoder(batch) for batch in dist_batches],
-            [self.encoder(batch) for batch in frontier_batches],
-            [self.encoder(batch) for batch in agent_batches],
-            [(self.encoder(batch) if batch.size(-1) > 0 else None) for batch in phistory_batches] if pos_history is not None else ([None] * len(frontier_idxs)),
-            [(self.encoder(batch) if batch.size(-1) > 0 else None) for batch in ghistory_batches] if goal_history is not None else ([None] * len(frontier_idxs))
+            [self.frontier_encoder(batch) for batch in frontier_batches],
+            [self.agent_encoder(batch) for batch in agent_batches],
+            [(self.agent_encoder(batch) if batch.size(-1) > 0 else None) for batch in phistory_batches] if pos_history is not None else ([None] * len(frontier_idxs)),
+            [(self.frontier_encoder(batch) if batch.size(-1) > 0 else None) for batch in ghistory_batches] if goal_history is not None else ([None] * len(frontier_idxs))
         )
     
 
-class MLPAttention(nn.Module):
-    def __init__(self, desc_dim):
-        super().__init__()
-        self.mlp = MLP([desc_dim * 3, desc_dim, 1])
 
-    def forward(self, query, key, value, dist, mask):
-        '''query: 1 x 128 x n_agent
-        key: 1 x 128 x n_frontier
-        dist: 1 x 128 x (n_agent x n_frontier)
-
-        cat: 1 x 384 x (n_agent x n_frontier)
-
-        value: 1 x 128 x n_frontier
-
-        scores: 1 x n_agent x n_frontier
-
-        output: n_agent x 128'''
-
-        nq, nk = query.size(-1), key.size(-1)
-        scores = self.mlp(torch.cat((
-            query.view(1, -1, nq, 1).repeat(1, 1, 1, nk).view(1, -1, nq * nk),
-            key.view(1, -1, 1, nk).repeat(1, 1, nq, 1).view(1, -1, nq * nk),
-            dist), dim=1)).view(1, nq, nk)
-        if mask is not None:
-            if type(mask) is float:
-                scores_detach = scores.detach()
-                scale = torch.clamp(mask / (scores_detach.max(2).values - scores_detach.median(2).values), 1., 1e3)
-                scores = scores * scale.unsqueeze(-1).repeat(1, 1, nk)
-            else:
-                scores = scores + (scores.min().detach()) * (~mask).float().view(1, nq, nk)
-        prob = scores.softmax(dim=-1)
-        return torch.einsum('bnm,bdm->bdn', prob, value), scores
     
 
 class MultiHeadedAttention(nn.Module):
@@ -167,7 +152,7 @@ class MultiHeadedAttention(nn.Module):
 class AttentionalPropagation(nn.Module):
     def __init__(self, feature_dim: int, num_heads: int, type: str):
         super().__init__()
-        self.attn = MLPAttention(feature_dim) if type == 'cross' else MultiHeadedAttention(num_heads, feature_dim)
+        self.attn = MultiHeadedAttention(num_heads, feature_dim)
         self.mlp = MLP([feature_dim*2, feature_dim*2, feature_dim])
         nn.init.constant_(self.mlp[-1].bias, 0.0)
 
@@ -311,10 +296,9 @@ class AttentionalGNN(nn.Module):
         # scores = scores.log_softmax(dim=-2).view(unreachable.shape)
         # scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
         scores = scores.mean(dim=1).view(-1)
-        score_min = scores.min() - scores.max()
         # Apply unreachable mask
         unreachable_frontiers = unreachable.any(dim=0)
-        scores = scores + (score_min - 60) * unreachable_frontiers.float()
+        scores.masked_fill_(unreachable_frontiers, -1e9)
 
         return scores
 

@@ -296,7 +296,7 @@ class NavEnv(Env):
         
         # 성공 & 실패 유무
         self.is_success = np.any(reached_goal)
-        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
         # self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
