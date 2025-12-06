@@ -63,7 +63,7 @@ agent:
   discount_factor: 0.99
   gae_lambda: 0.95
 
-  rotation_augmentation: 1
+  rotation_augmentation: 0
 
   value_clip_ratio: 0.2
   clip_ratio: 0.2
