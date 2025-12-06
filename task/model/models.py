@@ -68,7 +68,9 @@ class Encoder(nn.Module):
 
     def forward(self, inputs, dist, pos_history, goal_history, extras):
         inputs = inputs[:, 1, :, :]
-        sz = inputs.size(1)
+        # sz = inputs.size(1)
+        sz_r = inputs.size(1)
+        sz_c = inputs.size(2)
         frontier_idxs = []
         frontier_batches = []
         agent_batches = []
@@ -85,7 +87,9 @@ class Encoder(nn.Module):
             dist_batches.append(dist_feat)
             
             pts = inputs.new_zeros((1, frontier.size(0), 4))
-            pts[0, :, :2] = (frontier.float() - sz // 2) / (sz * 0.7)
+            pts[0, :, 0] = (frontier.float()[:, 0] - sz_r // 2) / (sz_r * 0.7) 
+            pts[0, :, 1] = (frontier.float()[:, 1] - sz_c // 2) / (sz_c * 0.7) 
+            # pts[0, :, :2] = (frontier.float() - sz // 2) / (sz * 0.7)
             pts[0, :, 2] = 1
             frontier_batches.append(pts.transpose(1, 2))
 
@@ -94,7 +98,9 @@ class Encoder(nn.Module):
                 phistory_idxs.append(phistory_pos)
                 
                 pts = pos_history.new_zeros((1, phistory_pos.size(0), 4))
-                pts[0, :, :2] = (phistory_pos.float() - sz // 2) / (sz * 0.7)
+                pts[0, :, 0] = (phistory_pos.float()[:, 0] - sz_r // 2) / (sz_r * 0.7) 
+                pts[0, :, 1] = (phistory_pos.float()[:, 1] - sz_c // 2) / (sz_c * 0.7)
+                # pts[0, :, :2] = (phistory_pos.float() - sz // 2) / (sz * 0.7)
                 pts[0, :, 3] = 1
                 phistory_batches.append(pts.transpose(1, 2))
 
@@ -103,12 +109,16 @@ class Encoder(nn.Module):
                 ghistory_idxs.append(ghistory_pos)
                 
                 pts = goal_history.new_zeros((1, ghistory_pos.size(0), 4))
-                pts[0, :, :2] = (ghistory_pos.float() - sz // 2) / (sz * 0.7)
+                pts[0, :, 0] = (ghistory_pos.float()[:, 0] - sz_r // 2) / (sz_r * 0.7) 
+                pts[0, :, 1] = (ghistory_pos.float()[:, 1] - sz_c // 2) / (sz_c * 0.7)
+                # pts[0, :, :2] = (ghistory_pos.float() - sz // 2) / (sz * 0.7)
                 pts[0, :, 2] = 1
                 ghistory_batches.append(pts.transpose(1, 2))
 
             pts = inputs.new_zeros((1, extras.size(1), 4))
-            pts[0, :, :2] = (extras[b].float() - sz // 2) / (sz * 0.7)
+            pts[0, :, 0] = (extras.float()[b, :, 0] - sz_r // 2) / (sz_r * 0.7)
+            pts[0, :, 1] = (extras.float()[b, :, 1] - sz_c // 2) / (sz_c * 0.7)
+            # pts[0, :, :2] = (extras[b].float() - sz // 2) / (sz * 0.7)
             pts[0, :, 3] = 1
             agent_batches.append(pts.transpose(1, 2))
         
