@@ -57,7 +57,7 @@ env:
 agent:
   mini_batch_size: 4
   max_batch_size: -1
-  epoch: 2
+  epoch: 4
   num_gae_block: 1
 
   discount_factor: 0.99
@@ -69,12 +69,12 @@ agent:
   clip_ratio: 0.2
   grad_norm_clip: 0.5
 
-  value_loss_coef: 0.1
-  entropy_loss_coef: 0.0001
+  value_loss_coef: 1.0
+  entropy_loss_coef: 0.0005
   policy_loss_coef: 2.0
 
   buffer:
-    rollout: 8
+    rollout: 16
 
   experiment:
     directory: "MARL"
@@ -85,7 +85,7 @@ agent:
 model:
   # Model Configuration
   model_type: gnn
-  num_gnn_layer: 1
+  num_gnn_layer: 3
   use_history: true
   ablation: false
 
@@ -96,6 +96,6 @@ model:
     
 # Training Settings
 train:
-  eval_freq: 25
+  eval_freq: 50
   max_episode: 1000
   timesteps: 5000000

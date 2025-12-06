@@ -35,9 +35,10 @@ class Encoder(nn.Module):
         super().__init__()
         self.frontier_encoder = MLP([4] + layers + [feature_dim])
         self.agent_encoder = MLP([4] + layers + [feature_dim])
+        self.dist_encoder = MLP([1, feature_dim, feature_dim])
         nn.init.constant_(self.frontier_encoder[-1].bias, 0.0)
         nn.init.constant_(self.agent_encoder[-1].bias, 0.0)
-        self.dist_encoder = MLP([1, feature_dim, feature_dim])
+        nn.init.constant_(self.dist_encoder[-1].bias, 0.0)
 
     def forward(self, inputs, dist, pos_history, goal_history, extras):
         inputs = inputs[:, 1, :, :]
@@ -74,8 +75,8 @@ class Encoder(nn.Module):
             dist_batches.append(dist_feat)
             
             pts = inputs.new_zeros((1, frontier.size(0), 4))
-            pts[0, :, 0] = (frontier.float()[:, 0] - sz_r // 2) / (sz_r * 0.7) 
-            pts[0, :, 1] = (frontier.float()[:, 1] - sz_c // 2) / (sz_c * 0.7) 
+            pts[0, :, 0] = (frontier.float()[:, 0]) / (sz_r) 
+            pts[0, :, 1] = (frontier.float()[:, 1]) / (sz_c) 
             # pts[0, :, :2] = (frontier.float() - sz // 2) / (sz * 0.7)
             pts[0, :, 2] = 1
             frontier_batches.append(pts.transpose(1, 2))
@@ -85,8 +86,8 @@ class Encoder(nn.Module):
                 phistory_idxs.append(phistory_pos)
                 
                 pts = pos_history.new_zeros((1, phistory_pos.size(0), 4))
-                pts[0, :, 0] = (phistory_pos.float()[:, 0] - sz_r // 2) / (sz_r * 0.7) 
-                pts[0, :, 1] = (phistory_pos.float()[:, 1] - sz_c // 2) / (sz_c * 0.7)
+                pts[0, :, 0] = (phistory_pos.float()[:, 0]) / (sz_r) 
+                pts[0, :, 1] = (phistory_pos.float()[:, 1]) / (sz_c)
                 # pts[0, :, :2] = (phistory_pos.float() - sz // 2) / (sz * 0.7)
                 pts[0, :, 3] = 1
                 phistory_batches.append(pts.transpose(1, 2))
@@ -96,15 +97,15 @@ class Encoder(nn.Module):
                 ghistory_idxs.append(ghistory_pos)
                 
                 pts = goal_history.new_zeros((1, ghistory_pos.size(0), 4))
-                pts[0, :, 0] = (ghistory_pos.float()[:, 0] - sz_r // 2) / (sz_r * 0.7) 
-                pts[0, :, 1] = (ghistory_pos.float()[:, 1] - sz_c // 2) / (sz_c * 0.7)
+                pts[0, :, 0] = (ghistory_pos.float()[:, 0])  / (sz_r) 
+                pts[0, :, 1] = (ghistory_pos.float()[:, 1]) / (sz_c)
                 # pts[0, :, :2] = (ghistory_pos.float() - sz // 2) / (sz * 0.7)
                 pts[0, :, 2] = 1
                 ghistory_batches.append(pts.transpose(1, 2))
 
             pts = inputs.new_zeros((1, extras.size(1), 4))
-            pts[0, :, 0] = (extras.float()[b, :, 0] - sz_r // 2) / (sz_r * 0.7)
-            pts[0, :, 1] = (extras.float()[b, :, 1] - sz_c // 2) / (sz_c * 0.7)
+            pts[0, :, 0] = (extras.float()[b, :, 0]) / (sz_r)
+            pts[0, :, 1] = (extras.float()[b, :, 1]) / (sz_c)
             # pts[0, :, :2] = (extras[b].float() - sz // 2) / (sz * 0.7)
             pts[0, :, 3] = 1
             agent_batches.append(pts.transpose(1, 2))
@@ -314,7 +315,7 @@ class Actor(nn.Module):
         # MLP encoder.
         extras = extras.view(inputs.size(0), -1, 6)
         unreachable = [
-            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) >= 40
+            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) >= 1e5
             for b in range(inputs.size(0))
         ]
 
