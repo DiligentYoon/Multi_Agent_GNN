@@ -1,100 +1,13 @@
 from copy import deepcopy
 import torch
 import os
+import torch.nn.functional as F
 
 from torch import nn
 from torch.distributions import Categorical
 
 
-class MultiHeatmap(nn.Module):
 
-    def __init__(self):
-        super(MultiHeatmap, self).__init__()
-
-    def forward(self, x):
-        return MultiCategorical(x)
-
-
-class MultiCategorical:
-    def __init__(self, logits):
-        """
-        Initializes a batch of team-level categorical distributions.
-        'logits' is a list of tensors, where each tensor contains the logits for one team's decision.
-        Each tensor has shape (num_frontiers,).
-        """
-        self.batch_size = len(logits)
-        # Filter out empty logits which can occur during rollout
-        self.valid_indices = [i for i, logit in enumerate(logits) if logit.numel() > 0]
-        if not self.valid_indices:
-            self.dist = []
-            self.device = torch.device('cpu')
-        else:
-            self.dist = [Categorical(logits=logits[i]) for i in self.valid_indices]
-            self.device = self.dist[0].logits.device
-
-    def sample(self, num_samples):
-        """
-        Samples 'num_samples' actions for each distribution in the batch.
-        Uses multinomial sampling with replacement.
-        """
-        if not self.dist:
-            return torch.empty(self.batch_size, num_samples, dtype=torch.long, device=self.device)
-
-        samples = torch.full((self.batch_size, num_samples), -1, dtype=torch.long, device=self.device)
-        for i, dist_idx in enumerate(self.valid_indices):
-            # Use replacement=True for safety, as num_frontiers can be less than num_agents
-            num_frontiers = self.dist[i].logits.shape[0]
-            if num_frontiers > 0:
-                samples[dist_idx] = torch.multinomial(self.dist[i].probs, num_samples=num_samples, replacement=True)
-        return samples
-
-    def mode(self, num_samples):
-        """
-        Returns the 'num_samples' most likely actions.
-        This is approximated by taking the top-k indices from the logits.
-        """
-        if not self.dist:
-            return torch.empty(self.batch_size, num_samples, dtype=torch.long, device=self.device)
-        
-        modes = torch.full((self.batch_size, num_samples), -1, dtype=torch.long, device=self.device)
-        for i, dist_idx in enumerate(self.valid_indices):
-            num_frontiers = self.dist[i].logits.shape[0]
-            if num_frontiers > 0:
-                # Ensure k is not greater than the number of available frontiers
-                k = min(num_samples, num_frontiers)
-                top_k_actions = torch.topk(self.dist[i].logits, k=k).indices
-                # Pad if k < num_samples
-                if k < num_samples:
-                    padding = torch.full((num_samples - k,), -1, dtype=torch.long, device=self.device)
-                    modes[dist_idx] = torch.cat([top_k_actions, padding])
-                else:
-                    modes[dist_idx] = top_k_actions
-        return modes
-
-    def log_probs(self, actions):
-        """
-        Calculates the sum of log probabilities for the given actions.
-        'actions' has shape (batch_size, num_samples).
-        """
-        log_probs = torch.zeros(self.batch_size, device=self.device)
-        for i, dist_idx in enumerate(self.valid_indices):
-            # Filter out padding actions (-1) before calculating log_prob
-            valid_actions = actions[dist_idx][actions[dist_idx] >= 0]
-            if valid_actions.numel() > 0:
-                # Ensure actions are within the valid range for the distribution
-                num_frontiers = self.dist[i].logits.shape[0]
-                if valid_actions.max().item() < num_frontiers:
-                    log_probs[dist_idx] = self.dist[i].log_prob(valid_actions).sum()
-        return log_probs
-
-    def entropy(self):
-        """
-        Calculates the entropy of each distribution in the batch.
-        """
-        entropies = torch.zeros(self.batch_size, device=self.device)
-        for i, dist_idx in enumerate(self.valid_indices):
-            entropies[dist_idx] = self.dist[i].entropy()
-        return entropies
 
 
 class Flatten(nn.Module):
@@ -299,9 +212,14 @@ class AttentionalGNN(nn.Module):
     def __init__(self, feature_dim: int, layer_names: list, use_history: bool, ablation: int):
         super().__init__()
         self.attn = nn.ModuleList([AttentionalPropagation(feature_dim, 4, type) for type in layer_names])
+        self.norm0 = nn.ModuleList([nn.LayerNorm(feature_dim) for _ in layer_names])
+        self.norm1 = nn.ModuleList([nn.LayerNorm(feature_dim) for _ in layer_names])
+
         if use_history:
             self.phattn = nn.ModuleList([AttentionalPropagation(feature_dim, 4, 'self') for type in layer_names])
             self.ghattn = nn.ModuleList([AttentionalPropagation(feature_dim, 4, 'self') for type in layer_names])
+            self.norm2 = nn.ModuleList([nn.LayerNorm(feature_dim) for _ in layer_names])
+            self.norm3 = nn.ModuleList([nn.LayerNorm(feature_dim) for _ in layer_names])
         else:
             self.phattn = [None for type in layer_names]
             self.ghattn = [None for type in layer_names]
@@ -340,12 +258,14 @@ class AttentionalGNN(nn.Module):
                             delta21, _ = phattn(desc2, desc1, None, None)
                             delta12, _ = phattn(desc1, desc2, None, None)
                             desc2 = desc2 + delta21
+                            desc2 = self.norm2[idx](desc2.transpose(1, 2)).transpose(1, 2)
                         else:
                             delta12 = 0
                         if desc3 is not None:
                             delta03, _ = ghattn(desc0, desc3, None, None)
                             delta30, _ = ghattn(desc3, desc0, None, None)
                             desc3 = desc3 + delta30
+                            desc3 = self.norm3[idx](desc3.transpose(1, 2)).transpose(1, 2)
                         else:
                             delta03 = 0
                         desc0, desc1 = (desc0 + delta0 + delta03), (desc1 + delta1 + delta12)
@@ -353,14 +273,18 @@ class AttentionalGNN(nn.Module):
                         if desc2 is not None:
                             delta2, _ = phattn(desc2, desc2, None, None)
                             desc2 = desc2 + delta2
+                            desc2 = self.norm2[idx](desc2.transpose(1, 2)).transpose(1, 2)
                         if desc3 is not None:
                             delta3, _ = ghattn(desc3, desc3, None, None)
                             desc3 = desc3 + delta3
+                            desc3 = self.norm3[idx](desc3.transpose(1, 2)).transpose(1, 2)
                         desc0, desc1 = (desc0 + delta0), (desc1 + delta1)
                 else:
                     desc0, desc1 = (desc0 + delta0), (desc1 + delta1)
 
-            
+                desc0 = self.norm0[idx](desc0.transpose(1, 2)).transpose(1, 2)
+                desc1 = self.norm1[idx](desc1.transpose(1, 2)).transpose(1, 2)
+
         # weights1: n_agent x n_frontier
         fidx = torch.repeat_interleave(fidx.view(1, fidx.size(0), 2), repeats=lmb.size(0), dim=0)
         lmb = torch.repeat_interleave(lmb.view(lmb.size(0), 1, 4), repeats=fidx.size(1), dim=1)
@@ -440,19 +364,19 @@ class GNN(nn.Module):
 
         self.critic_encoder = nn.Sequential(
             nn.Conv2d(6, 64, 6, stride=(1, 2), padding=2),
-            # nn.BatchNorm2d(64),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 128, 6, stride=2, padding=2),
-            # nn.BatchNorm2d(128),
+            nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 128, 5, stride=1, padding=2),
-            # nn.BatchNorm2d(128),
+            nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, 64, 6, stride=1, padding=2),
-            # nn.BatchNorm2d(64),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.Conv2d(64, 16, 5, stride=1, padding=2),
-            # nn.BatchNorm2d(16),
+            nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
             Flatten()
         )
@@ -498,13 +422,9 @@ class RL_ActorCritic(nn.Module):
     
         assert action_space.__class__.__name__ == "Box"
         self.num_action = action_space.shape[0]
-        self.dist = MultiHeatmap()
 
-        self.actor_optimizer = torch.optim.Adam(set(filter(lambda p: p.requires_grad,
-            self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,
-            self.dist.parameters())), lr=lr[0], eps=eps)
-        self.critic_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad,
-            self.network.critic.parameters()), lr=lr[1], eps=eps)
+        self.actor_optimizer = torch.optim.Adam(self.network.actor.parameters(), lr=lr[0], eps=eps)
+        self.critic_optimizer = torch.optim.Adam(self.network.critic.parameters(), lr=lr[1], eps=eps)
 
         self.model_type = model_type
 
@@ -532,16 +452,41 @@ class RL_ActorCritic(nn.Module):
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
         
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
-        dist = self.dist(actor_features)
+        
+        # Pad the list of logit tensors
+        if not actor_features or all(f.numel() == 0 for f in actor_features):
+            batch_size = inputs.size(0)
+            action = torch.full((batch_size, self.num_action), -1, dtype=torch.long, device=inputs.device)
+            action_log_probs = torch.zeros(batch_size, device=inputs.device)
+            return value, action, action_log_probs, rnn_hxs, actor_features
 
-        num_agents = self.num_action
+        max_len = max((f.shape[0] for f in actor_features if f.numel() > 0), default=0)
+        if max_len == 0:
+            batch_size = inputs.size(0)
+            action = torch.full((batch_size, self.num_action), -1, dtype=torch.long, device=inputs.device)
+            action_log_probs = torch.zeros(batch_size, device=inputs.device)
+            return value, action, action_log_probs, rnn_hxs, actor_features
+
+        padded_logits = []
+        for logits in actor_features:
+            if logits.numel() > 0:
+                pad_size = max_len - logits.shape[0]
+                padded = F.pad(logits, (0, pad_size), 'constant', -1e9)
+                padded_logits.append(padded)
+            else:
+                padded_logits.append(torch.full((max_len,), -1e9, device=inputs.device, dtype=torch.float))
+        
+        logits_tensor = torch.stack(padded_logits, dim=0)
+        
+        dist = Categorical(logits=logits_tensor)
 
         if deterministic:
-            action = dist.mode(num_samples=num_agents)
+            # Take top-k actions for mode
+            _, action = torch.topk(logits_tensor, k=self.num_action, dim=-1)
         else:
-            action = dist.sample(num_samples=num_agents)
+            action = dist.sample(sample_shape=torch.Size([self.num_action])).transpose(0, 1)
 
-        action_log_probs = dist.log_probs(action)
+        action_log_probs = dist.log_prob(action).sum(dim=-1)
 
         return value, action, action_log_probs, rnn_hxs, actor_features
 
@@ -553,21 +498,50 @@ class RL_ActorCritic(nn.Module):
     def evaluate_actions(self, inputs, rnn_hxs, masks, action, extras=None):
 
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
-        dist = self.dist(actor_features)
+        
+        # Pad the list of logit tensors
+        if not actor_features or all(f.numel() == 0 for f in actor_features):
+            batch_size = inputs.size(0)
+            action_log_probs = torch.zeros(batch_size, device=inputs.device)
+            dist_entropy = torch.zeros(1, device=inputs.device).mean()
+            return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
 
-        action_log_probs = dist.log_probs(action)
+        max_len = max((f.shape[0] for f in actor_features if f.numel() > 0), default=0)
+        if max_len == 0:
+            batch_size = inputs.size(0)
+            action_log_probs = torch.zeros(batch_size, device=inputs.device)
+            dist_entropy = torch.zeros(1, device=inputs.device).mean()
+            return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
+
+        padded_logits = []
+        for logits in actor_features:
+            if logits.numel() > 0:
+                pad_size = max_len - logits.shape[0]
+                padded = F.pad(logits, (0, pad_size), 'constant', -1e9)
+                padded_logits.append(padded)
+            else:
+                padded_logits.append(torch.full((max_len,), -1e9, device=inputs.device, dtype=torch.float))
+
+        logits_tensor = torch.stack(padded_logits, dim=0)
+        
+        dist = Categorical(logits=logits_tensor)
+
+        # Mask out invalid actions (-1) before calculating log_prob
+        action_mask = action >= 0
+        log_probs = dist.log_prob(action.clamp(min=0)) # Use clamp to avoid error on -1 index
+        log_probs = log_probs * action_mask.float() # Zero out log_probs for padded actions
+        action_log_probs = log_probs.sum(dim=-1)
+
         dist_entropy = dist.entropy().mean()
 
         return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
 
 
     def load(self, path, device):
-        self.actor_optimizer = torch.optim.Adam(set(filter(lambda p: p.requires_grad,
-            self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,
-            self.dist.parameters())), lr=1e-3)
-        self.critic_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad,
-            self.network.critic.parameters()), lr=1e-3)
-        # state_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        # Re-initialize optimizers before loading their state
+        self.actor_optimizer = torch.optim.Adam(self.network.actor.parameters(), lr=1e-3)
+        self.critic_optimizer = torch.optim.Adam(self.network.critic.parameters(), lr=1e-3)
+        
         state_dict = torch.load(path, map_location=device)
         self.network.load_state_dict(state_dict['network'])
         self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])

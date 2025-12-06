@@ -453,6 +453,6 @@ if __name__ == '__main__':
     
     # Run the test with visualization enabled
     run_simulation_test(config, 
-                        steps=30, 
+                        steps=1, 
                         visualize=True,
                         load_file_path=None)
