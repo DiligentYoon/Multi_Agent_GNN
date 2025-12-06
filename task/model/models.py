@@ -17,26 +17,84 @@ class MultiHeatmap(nn.Module):
 
 class MultiCategorical:
     def __init__(self, logits):
+        """
+        Initializes a batch of team-level categorical distributions.
+        'logits' is a list of tensors, where each tensor contains the logits for one team's decision.
+        Each tensor has shape (num_frontiers,).
+        """
         self.batch_size = len(logits)
-        self.multi = [logit.shape[0] for logit in logits]
-        assert max(self.multi) == min(self.multi)
-        self.multi = self.multi[0]
-        self.n_class = [logit.shape[1] for logit in logits]
-        self.dist = [Categorical(logits=logit) for logit in logits]
+        # Filter out empty logits which can occur during rollout
+        self.valid_indices = [i for i, logit in enumerate(logits) if logit.numel() > 0]
+        if not self.valid_indices:
+            self.dist = []
+            self.device = torch.device('cpu')
+        else:
+            self.dist = [Categorical(logits=logits[i]) for i in self.valid_indices]
+            self.device = self.dist[0].logits.device
 
-    def sample(self):
-        return torch.stack([d.sample() for d in self.dist])
+    def sample(self, num_samples):
+        """
+        Samples 'num_samples' actions for each distribution in the batch.
+        Uses multinomial sampling with replacement.
+        """
+        if not self.dist:
+            return torch.empty(self.batch_size, num_samples, dtype=torch.long, device=self.device)
 
-    def mode(self):
-        return torch.stack([d.mode.squeeze(-1) for d in self.dist])
+        samples = torch.full((self.batch_size, num_samples), -1, dtype=torch.long, device=self.device)
+        for i, dist_idx in enumerate(self.valid_indices):
+            # Use replacement=True for safety, as num_frontiers can be less than num_agents
+            num_frontiers = self.dist[i].logits.shape[0]
+            if num_frontiers > 0:
+                samples[dist_idx] = torch.multinomial(self.dist[i].probs, num_samples=num_samples, replacement=True)
+        return samples
+
+    def mode(self, num_samples):
+        """
+        Returns the 'num_samples' most likely actions.
+        This is approximated by taking the top-k indices from the logits.
+        """
+        if not self.dist:
+            return torch.empty(self.batch_size, num_samples, dtype=torch.long, device=self.device)
+        
+        modes = torch.full((self.batch_size, num_samples), -1, dtype=torch.long, device=self.device)
+        for i, dist_idx in enumerate(self.valid_indices):
+            num_frontiers = self.dist[i].logits.shape[0]
+            if num_frontiers > 0:
+                # Ensure k is not greater than the number of available frontiers
+                k = min(num_samples, num_frontiers)
+                top_k_actions = torch.topk(self.dist[i].logits, k=k).indices
+                # Pad if k < num_samples
+                if k < num_samples:
+                    padding = torch.full((num_samples - k,), -1, dtype=torch.long, device=self.device)
+                    modes[dist_idx] = torch.cat([top_k_actions, padding])
+                else:
+                    modes[dist_idx] = top_k_actions
+        return modes
 
     def log_probs(self, actions):
-        assert actions.shape == (self.batch_size, self.multi)
-        assert torch.tensor([d.probs.shape[1] > actions[b].max().item() for b, d in enumerate(self.dist)]).all()
-        return torch.stack([d.log_prob(actions[b]).sum() for b, d in enumerate(self.dist)])
+        """
+        Calculates the sum of log probabilities for the given actions.
+        'actions' has shape (batch_size, num_samples).
+        """
+        log_probs = torch.zeros(self.batch_size, device=self.device)
+        for i, dist_idx in enumerate(self.valid_indices):
+            # Filter out padding actions (-1) before calculating log_prob
+            valid_actions = actions[dist_idx][actions[dist_idx] >= 0]
+            if valid_actions.numel() > 0:
+                # Ensure actions are within the valid range for the distribution
+                num_frontiers = self.dist[i].logits.shape[0]
+                if valid_actions.max().item() < num_frontiers:
+                    log_probs[dist_idx] = self.dist[i].log_prob(valid_actions).sum()
+        return log_probs
 
     def entropy(self):
-        return torch.stack([d.entropy().sum() for b, d in enumerate(self.dist)])
+        """
+        Calculates the entropy of each distribution in the batch.
+        """
+        entropies = torch.zeros(self.batch_size, device=self.device)
+        for i, dist_idx in enumerate(self.valid_indices):
+            entropies[dist_idx] = self.dist[i].entropy()
+        return entropies
 
 
 class Flatten(nn.Module):
@@ -328,9 +386,11 @@ class AttentionalGNN(nn.Module):
 
         # scores = scores.log_softmax(dim=-2).view(unreachable.shape)
         # scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
-        scores = scores.view(unreachable.shape)
+        scores = scores.mean(dim=1).view(-1)
         score_min = scores.min() - scores.max()
-        scores = scores + (score_min - 60) * unreachable.float()
+        # Apply unreachable mask
+        unreachable_frontiers = unreachable.any(dim=0)
+        scores = scores + (score_min - 60) * unreachable_frontiers.float()
 
         return scores
 
@@ -437,6 +497,7 @@ class RL_ActorCritic(nn.Module):
                            base_kwargs.get('use_history'), base_kwargs.get('ablation'))
     
         assert action_space.__class__.__name__ == "Box"
+        self.num_action = action_space.shape[0]
         self.dist = MultiHeatmap()
 
         self.actor_optimizer = torch.optim.Adam(set(filter(lambda p: p.requires_grad,
@@ -473,10 +534,12 @@ class RL_ActorCritic(nn.Module):
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
         dist = self.dist(actor_features)
 
+        num_agents = self.num_action
+
         if deterministic:
-            action = dist.mode()
+            action = dist.mode(num_samples=num_agents)
         else:
-            action = dist.sample()
+            action = dist.sample(num_samples=num_agents)
 
         action_log_probs = dist.log_probs(action)
 

@@ -163,6 +163,8 @@ class NavEnv(Env):
 
             # 보정된 Target Point를 최종 할당
             self.assigned_rc[i] = final_target_rc
+        
+        self.assigned_rc = np.array(assign_targets_hungarian(self.map_info, self.robot_locations, self.assigned_rc, self.num_agent))
 
 
     def _apply_actions(self):
