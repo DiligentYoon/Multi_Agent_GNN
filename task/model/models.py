@@ -481,12 +481,16 @@ class RL_ActorCritic(nn.Module):
         dist = Categorical(logits=logits_tensor)
 
         if deterministic:
-            # Take top-k actions for mode
             _, action = torch.topk(logits_tensor, k=self.num_action, dim=-1)
         else:
-            action = dist.sample(sample_shape=torch.Size([self.num_action])).transpose(0, 1)
+            # sample_shape prepends to batch_shape, so result is (num_action, batch_size)
+            action_transposed = dist.sample(sample_shape=torch.Size([self.num_action]))
+            action = action_transposed.transpose(0, 1)
 
-        action_log_probs = dist.log_prob(action).sum(dim=-1)
+        # Calculate log_probs for the chosen action
+        action_transposed_for_log_prob = action.transpose(0, 1)
+        log_probs_transposed = dist.log_prob(action_transposed_for_log_prob)
+        action_log_probs = log_probs_transposed.sum(dim=0)
 
         return value, action, action_log_probs, rnn_hxs, actor_features
 
@@ -528,9 +532,14 @@ class RL_ActorCritic(nn.Module):
 
         # Mask out invalid actions (-1) before calculating log_prob
         action_mask = action >= 0
-        log_probs = dist.log_prob(action.clamp(min=0)) # Use clamp to avoid error on -1 index
-        log_probs = log_probs * action_mask.float() # Zero out log_probs for padded actions
-        action_log_probs = log_probs.sum(dim=-1)
+        action_transposed = action.transpose(0, 1)
+
+        # Use clamp to avoid error on -1 index
+        log_probs_transposed = dist.log_prob(action_transposed.clamp(min=0))
+
+        # Zero out log_probs for padded actions and sum
+        log_probs_transposed = log_probs_transposed * action_mask.transpose(0, 1).float()
+        action_log_probs = log_probs_transposed.sum(dim=0)
 
         dist_entropy = dist.entropy().mean()
 
