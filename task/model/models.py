@@ -29,22 +29,82 @@ def MLP(channels, do_bn=False):
     return nn.Sequential(*layers)
 
 
+class PositionalEncoder(nn.Module):
+    """
+    Sinusoidal positional encoding for spatial coordinates.
+    (From NeRF: https://github.com/yenchenlin/nerf-pytorch)
+    """
+    def __init__(self, num_freqs: int, include_input: bool = True):
+        super().__init__()
+        self.num_freqs = num_freqs
+        self.include_input = include_input
+        self.log_sampling = True
+        
+        if self.log_sampling:
+            self.freq_bands = 2.**torch.linspace(0., num_freqs - 1, steps=num_freqs)
+        else:
+            self.freq_bands = torch.linspace(1., 2.**(num_freqs - 1), steps=num_freqs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x is shape [..., D]
+        out = []
+        if self.include_input:
+            out.append(x)
+        
+        for freq in self.freq_bands.to(x.device):
+            out.append(torch.sin(x * freq))
+            out.append(torch.cos(x * freq))
+            
+        return torch.cat(out, dim=-1)
+
+
 class Encoder(nn.Module):
     """ Joint encoding of semantic tag and location using MLPs"""
     def __init__(self, feature_dim, layers):
         super().__init__()
-        self.frontier_encoder = MLP([4] + layers + [feature_dim])
-        self.agent_encoder = MLP([4] + layers + [feature_dim])
+        
+        num_pos_freqs = 10 # Number of frequency bands for positional encoding
+        # Calculate the output dimension of the positional encoder
+        # D_in=2 (x,y), include_input=True, so (2) + (2 * 2 * num_pos_freqs)
+        pos_enc_dim = 2 + (2 * 2 * num_pos_freqs)
+        # The final input to the MLP is the positional encoding + 2D one-hot type
+        encoder_input_dim = pos_enc_dim + 2
+
+        self.pos_encoder = PositionalEncoder(num_pos_freqs, include_input=True)
+        
+        self.frontier_encoder = MLP([encoder_input_dim] + layers + [feature_dim])
+        self.agent_encoder = MLP([encoder_input_dim] + layers + [feature_dim])
         self.dist_encoder = MLP([1, feature_dim, feature_dim])
+
         nn.init.constant_(self.frontier_encoder[-1].bias, 0.0)
         nn.init.constant_(self.agent_encoder[-1].bias, 0.0)
         nn.init.constant_(self.dist_encoder[-1].bias, 0.0)
 
+    def _create_feature_batch(self, points, type_vec, sz_r, sz_c):
+        if points.size(0) == 0:
+            return None
+        
+        # Normalize coordinates to [0, 1]
+        norm_coords = torch.stack([
+            points.float()[:, 0] / sz_r,
+            points.float()[:, 1] / sz_c
+        ], dim=-1)
+        
+        # Create positional encoding
+        pos_enc = self.pos_encoder(norm_coords)
+        
+        # Create type encoding
+        type_enc = type_vec.expand(points.size(0), 2)
+        
+        # Concatenate and format for Conv1d
+        features = torch.cat([pos_enc, type_enc], dim=-1).unsqueeze(0) # Shape: [1, num_points, final_dim]
+        return features.transpose(1, 2) # Shape: [1, final_dim, num_points]
+
     def forward(self, inputs, dist, pos_history, goal_history, extras):
         inputs = inputs[:, 1, :, :]
-        # sz = inputs.size(1)
         sz_r = inputs.size(1)
         sz_c = inputs.size(2)
+        
         frontier_idxs = []
         frontier_batches = []
         agent_batches = []
@@ -53,72 +113,57 @@ class Encoder(nn.Module):
         phistory_batches = []
         ghistory_idxs = []
         ghistory_batches = []
+
+        device = inputs.device
+        type_frontier = torch.tensor([1., 0.], device=device)
+        type_agent = torch.tensor([0., 1.], device=device)
+
         for b in range(inputs.size(0)):
             frontier = torch.nonzero(inputs[b, :, :])
 
             if frontier.size(0) > 0:
-                # Extract distance features in a structured way (n_agent, n_frontier)
                 dist_structured = dist[b, :, :, :][(inputs[b, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1)
 
-                # --- SHUFFLE LOGIC to break index-based bias ---
-                perm = torch.randperm(frontier.size(0), device=frontier.device)
+                perm = torch.randperm(frontier.size(0), device=device)
                 frontier = frontier[perm]
                 dist_structured = dist_structured[:, perm]
-                # --- END SHUFFLE ---
                 
-                # Now, proceed with the log-normalized and flattened distance features
                 dist_feat = torch.log1p(dist_structured.reshape(1, 1, -1))
             else:
-                dist_feat = torch.empty(1, 1, 0, device=inputs.device)
+                dist_feat = torch.empty(1, 1, 0, device=device)
 
             frontier_idxs.append(frontier)
             dist_batches.append(dist_feat)
             
-            pts = inputs.new_zeros((1, frontier.size(0), 4))
-            pts[0, :, 0] = (frontier.float()[:, 0]) / (sz_r) 
-            pts[0, :, 1] = (frontier.float()[:, 1]) / (sz_c) 
-            # pts[0, :, :2] = (frontier.float() - sz // 2) / (sz * 0.7)
-            pts[0, :, 2] = 1
-            frontier_batches.append(pts.transpose(1, 2))
+            # Create feature batches using the helper function
+            frontier_batches.append(self._create_feature_batch(frontier, type_frontier, sz_r, sz_c))
 
             if pos_history is not None:
                 phistory_pos = torch.nonzero(pos_history[b, :, :])
                 phistory_idxs.append(phistory_pos)
-                
-                pts = pos_history.new_zeros((1, phistory_pos.size(0), 4))
-                pts[0, :, 0] = (phistory_pos.float()[:, 0]) / (sz_r) 
-                pts[0, :, 1] = (phistory_pos.float()[:, 1]) / (sz_c)
-                # pts[0, :, :2] = (phistory_pos.float() - sz // 2) / (sz * 0.7)
-                pts[0, :, 3] = 1
-                phistory_batches.append(pts.transpose(1, 2))
-
+                phistory_batches.append(self._create_feature_batch(phistory_pos, type_agent, sz_r, sz_c))
+            
             if goal_history is not None:
                 ghistory_pos = torch.nonzero(goal_history[b, :, :])
                 ghistory_idxs.append(ghistory_pos)
-                
-                pts = goal_history.new_zeros((1, ghistory_pos.size(0), 4))
-                pts[0, :, 0] = (ghistory_pos.float()[:, 0])  / (sz_r) 
-                pts[0, :, 1] = (ghistory_pos.float()[:, 1]) / (sz_c)
-                # pts[0, :, :2] = (ghistory_pos.float() - sz // 2) / (sz * 0.7)
-                pts[0, :, 2] = 1
-                ghistory_batches.append(pts.transpose(1, 2))
+                ghistory_batches.append(self._create_feature_batch(ghistory_pos, type_frontier, sz_r, sz_c))
 
-            pts = inputs.new_zeros((1, extras.size(1), 4))
-            pts[0, :, 0] = (extras.float()[b, :, 0]) / (sz_r)
-            pts[0, :, 1] = (extras.float()[b, :, 1]) / (sz_c)
-            # pts[0, :, :2] = (extras[b].float() - sz // 2) / (sz * 0.7)
-            pts[0, :, 3] = 1
-            agent_batches.append(pts.transpose(1, 2))
+            agent_pos = extras[b, :, :2].long()
+            agent_batches.append(self._create_feature_batch(agent_pos, type_agent, sz_r, sz_c))
         
+        # Helper to handle None in list comprehension
+        def encode_batch(encoder, batch_list):
+            return [(encoder(batch) if batch is not None else None) for batch in batch_list]
+
         return (
             frontier_idxs,
             phistory_idxs if pos_history is not None else ([None] * len(frontier_idxs)),
             ghistory_idxs if goal_history is not None else ([None] * len(frontier_idxs)),
             [self.dist_encoder(batch) for batch in dist_batches],
-            [self.frontier_encoder(batch) for batch in frontier_batches],
-            [self.agent_encoder(batch) for batch in agent_batches],
-            [(self.agent_encoder(batch) if batch.size(-1) > 0 else None) for batch in phistory_batches] if pos_history is not None else ([None] * len(frontier_idxs)),
-            [(self.frontier_encoder(batch) if batch.size(-1) > 0 else None) for batch in ghistory_batches] if goal_history is not None else ([None] * len(frontier_idxs))
+            encode_batch(self.frontier_encoder, frontier_batches),
+            encode_batch(self.agent_encoder, agent_batches),
+            encode_batch(self.agent_encoder, phistory_batches) if pos_history is not None else ([None] * len(frontier_idxs)),
+            encode_batch(self.frontier_encoder, ghistory_batches) if goal_history is not None else ([None] * len(frontier_idxs))
         )
     
 
@@ -315,7 +360,7 @@ class Actor(nn.Module):
         # MLP encoder.
         extras = extras.view(inputs.size(0), -1, 6)
         unreachable = [
-            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) >= 1e5
+            dist[b, :, :, :][(inputs[b, 1, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1) >= 40
             for b in range(inputs.size(0))
         ]
 
@@ -360,7 +405,7 @@ class GNN(nn.Module):
             nn.Conv2d(128, 64, 6, stride=1, padding=2),
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, 16, 5, stride=1, padding=2),
+            nn.Conv2d(64, 16, 5, stride=(1, 2), padding=2),
             nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
             Flatten()
@@ -477,7 +522,7 @@ class RL_ActorCritic(nn.Module):
         log_probs_transposed = dist.log_prob(action_transposed_for_log_prob)
         action_log_probs = log_probs_transposed.sum(dim=0)
 
-        return value, action, action_log_probs, rnn_hxs, actor_features
+        return value, action, action_log_probs, rnn_hxs, dist.probs
 
 
     def get_value(self, inputs, rnn_hxs, masks, extras=None):
@@ -528,7 +573,7 @@ class RL_ActorCritic(nn.Module):
 
         dist_entropy = dist.entropy().mean()
 
-        return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
+        return value, action_log_probs, dist_entropy, rnn_hxs, dist.probs
 
 
     def load(self, path, device):

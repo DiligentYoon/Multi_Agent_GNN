@@ -86,7 +86,7 @@ model:
   # Model Configuration
   model_type: gnn
   num_gnn_layer: 3
-  use_history: true
+  use_history: false
   ablation: false
 
   # Optimizer Paramters

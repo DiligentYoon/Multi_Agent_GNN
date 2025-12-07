@@ -235,6 +235,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
         )
 
         print(f"Frontier Index: {actions.cpu().numpy()}")
+        print(f"Probability: {action_maps[0][actions].cpu().numpy()}")
         print(f"Reward : {reward.item():.2f}")
         print(f'# of frontier (obs) : { torch.nonzero(obs[1, :, :]).shape[0] }')
 

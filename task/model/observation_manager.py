@@ -158,6 +158,8 @@ class ObservationManager:
         
         """
         global_input = nn.MaxPool2d(self.pooling_downsampling)(self.global_map)
+         # frontier 중, obstacle과 겹치는 부분은 삭제
+        global_input[1, :, :][global_input[0, :, :].bool()] = 0
         global_input[6, :, :] -= global_input[2, :, :]
         global_input[7, :, :] = g_history
         dist_input = torch.zeros((self.num_robots, self.global_map_h, self.global_map_w))
