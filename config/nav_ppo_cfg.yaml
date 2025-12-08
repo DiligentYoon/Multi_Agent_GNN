@@ -63,7 +63,7 @@ agent:
   discount_factor: 0.99
   gae_lambda: 0.95
 
-  rotation_augmentation: 1
+  rotation_augmentation: 0
 
   value_clip_ratio: 0.2
   clip_ratio: 0.2
@@ -71,7 +71,7 @@ agent:
 
   value_loss_coef: 1.0
   entropy_loss_coef: 0.001
-  policy_loss_coef: 2.0
+  policy_loss_coef: 5.0
 
   buffer:
     rollout: 32
@@ -91,7 +91,7 @@ model:
 
   # Optimizer Paramters
   actor_lr: 1e-3
-  critic_lr: 1e-5
+  critic_lr: 1e-3
   eps: 1e-6
     
 # Training Settings
