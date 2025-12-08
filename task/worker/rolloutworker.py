@@ -17,6 +17,7 @@ from task.env.nav_env import NavEnv
 from task.agent.ppo import PPOAgent
 from task.buffer.rolloutbuffer import CoMappingRolloutBuffer
 from task.model.models import RL_ActorCritic
+from task.model.models_ver_2 import RL_Policy
 
 @ray.remote
 class RolloutWorker:
@@ -71,19 +72,20 @@ class RolloutWorker:
         self.coverage_rate = deque(maxlen=100)
         self.is_success = deque(maxlen=100)
         self.episode_step = 0
+        self.first = True
         self.last_rec_states = None
         self.last_mask = None
         self.episode_is_done = True
 
 
-    def _create_model(self, model_cfg: dict) -> RL_ActorCritic:
+    def _create_model(self, model_cfg: dict) -> RL_Policy:
         """
         Helper function to create a model instance.
         """
         for key, value in model_cfg.items():
             if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
                 model_cfg[key] = float(value)
-        return RL_ActorCritic(self.observation_space.shape, self.action_space,
+        return RL_Policy(self.observation_space.shape, self.action_space,
                               model_type=model_cfg['model_type'],
                               base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
                                            'use_history': model_cfg['use_history'],
@@ -108,7 +110,7 @@ class RolloutWorker:
             num_agents=1, # centralized
             obs_shape=self.observation_space.shape,
             action_space=self.action_space,
-            rec_state_size=self.agent.model.rec_state_size,
+            rec_state_size=1,
             extras_size=self.cfg['env']['num_agent'] * 6
         ).to(self.device)
 
@@ -117,10 +119,13 @@ class RolloutWorker:
         for i in range(self.rollout_fragment_length):
             # If the last episode was done, reset the environment.
             if self.episode_is_done:
-                if self.env.is_success:
+                if self.env.is_success and not self.first:
                     self.is_success.append(1)
                 else:
-                    self.is_success.append(0)
+                    if self.first:
+                        self.first = False
+                    else:
+                        self.is_success.append(0)
                 self.coverage_rate.append(self.env.prev_explored_region / (self.env.map_info.H * self.env.map_info.W))
                 self.cumulative_episode_step.append(copy.deepcopy(self.episode_step))
                 self.episode_step = 0

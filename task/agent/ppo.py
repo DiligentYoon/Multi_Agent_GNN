@@ -38,7 +38,7 @@ class PPOAgent(Agent):
         self.policy_loss_coef = self.cfg["policy_loss_coef"]
         
 
-        self.use_clipped_value_loss = False
+        self.use_clipped_value_loss = True
     
     def act(self, inputs, rnn_hxs, masks, extras=None, deterministic=False):
         
@@ -64,7 +64,7 @@ class PPOAgent(Agent):
                                                     self.mini_batch_size, 
                                                     self.max_batch_size, 
                                                     self.rotation_augmentation, 
-                                                    ds=self.model.network.downscaling,
+                                                    ds=1,
                                                     verbose=True)
 
             for sample in data_generator:
@@ -93,16 +93,14 @@ class PPOAgent(Agent):
                 if torch.isnan(action_loss):
                     print('aloss nan')
                     continue
+                
+                if values.shape != returns.shape:
+                    values = values.view(1, -1)
 
                 if self.use_clipped_value_loss:
-                    value_pred_clipped = value_preds + \
-                                        (values - value_preds).clamp(
-                                            -self.value_clip_ratio, self.value_clip_ratio)
                     value_losses = (values - returns).pow(2)
-                    value_losses_clipped = (value_pred_clipped
-                                            - returns).pow(2)
-                    value_loss = .5 * torch.max(value_losses,
-                                                value_losses_clipped).mean()
+                    value_losses_clipped = (torch.clamp(values, value_preds - self.clip_ratio, value_preds + self.clip_ratio) - returns).pow(2)
+                    value_loss = 0.5 * torch.max(value_losses, value_losses_clipped).mean()
                 else:
                     value_loss = 0.5 * (returns - values).pow(2).mean()
 

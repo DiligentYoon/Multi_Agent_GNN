@@ -31,6 +31,8 @@ from task.env.nav_env import NavEnv
 from task.worker.rolloutworker import RolloutWorker
 from task.agent.ppo import PPOAgent
 from task.model.models import RL_ActorCritic
+from task.model.models_ver_2 import RL_Policy
+from task.buffer.rolloutbuffer import CoMappingRolloutBuffer
 from test_main_driver import viz_simulation_test
 import gymnasium as gym
 
@@ -68,7 +70,7 @@ def main(cfg: dict, args: argparse.Namespace):
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
-    learner_model = RL_ActorCritic(observation_space.shape, action_space,
+    learner_model = RL_Policy(observation_space.shape, action_space,
                                    model_type=model_cfg['model_type'],
                                    base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
                                                 'use_history': model_cfg['use_history'],
@@ -76,6 +78,18 @@ def main(cfg: dict, args: argparse.Namespace):
                                    lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
                                    eps=model_cfg['eps']).to(device)
     learner_agent = PPOAgent(learner_model, device, cfg['agent'])
+
+    main_buffer = CoMappingRolloutBuffer(cfg['agent']['buffer']['rollout'], 
+                                         num_envs=cfg['ray']['num_workers'], 
+                                         eval_freq=cfg['train']['eval_freq'],
+                                         num_repeats=cfg['agent']["num_gae_block"],
+                                         num_agents=1, # Centralized Network
+                                         obs_shape=observation_space.shape,
+                                         action_space=action_space,
+                                         rec_state_size=1,
+                                         extras_size=num_agents * 6
+                                        ).to(device)
+    
     print("Central learner agent created.")
 
     if args.checkpoint is not None:
@@ -131,9 +145,9 @@ def main(cfg: dict, args: argparse.Namespace):
         total_avg_episode_steps = 0.0
 
         t1 = time.time()
-        for buffer, rollout_info in zip(rollout_buffers, rollout_infos):
+        for i, (buffer, rollout_info) in enumerate(zip(rollout_buffers, rollout_infos)):
             # The buffer from the worker already has returns computed.
-            value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
+            # value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
             
             # Aggregate raw counts from each worker
             total_successes += rollout_info.get('total_successes', 0)
@@ -143,20 +157,31 @@ def main(cfg: dict, args: argparse.Namespace):
 
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
-            if value_loss > 0: # Assuming positive loss indicates a valid update
-                iter_v_loss += value_loss
-                iter_a_loss += action_loss
-                iter_d_entropy += dist_entropy
+
+            # Aggregate buffer data into main buffer
+            main_buffer.obs[:, i].copy_(buffer.obs[:, 0].to(device))
+            main_buffer.rec_states[:, i].copy_(buffer.rec_states[:, 0].to(device))
+            main_buffer.actions[:, i].copy_(buffer.actions[:, 0].to(device))
+            main_buffer.action_log_probs[:, i].copy_(buffer.action_log_probs[:, 0].to(device))
+            main_buffer.value_preds[:, i].copy_(buffer.value_preds[:, 0].to(device))
+            main_buffer.rewards[:, i].copy_(buffer.rewards[:, 0].to(device))
+            main_buffer.masks[:, i].copy_(buffer.masks[:, 0].to(device))
+            main_buffer.open[i].copy_(buffer.open[0].to(device))
+            main_buffer.extras[:, i].copy_(buffer.extras[:, 0].to(device))
+            main_buffer.returns[:, i].copy_(buffer.returns[:, 0].to(device))
+
+
+        iter_v_loss, iter_a_loss, iter_d_entropy = learner_agent.update(main_buffer)
         t2 = time.time()
 
         # Aggregate and log losses
+        value_losses.append(iter_v_loss)
+        action_losses.append(iter_a_loss)
+        dist_entropies.append(iter_d_entropy)
         num_updates = len(rollout_buffers)
         if num_updates > 0:
             per_step_reward.append(iter_per_step_reward / num_updates)
             rollout_reward.append(iter_rollout_reward / num_updates)
-            value_losses.append(iter_v_loss / num_updates)
-            action_losses.append(iter_a_loss / num_updates)
-            dist_entropies.append(iter_d_entropy / num_updates)
 
         global_step += rollout
 
@@ -203,8 +228,9 @@ def main(cfg: dict, args: argparse.Namespace):
         line_episode_success = f"Avg Success Rate  : {100 * global_success_rate:6.2f} %"
         line_per_step_reward = f"Per-Step Rewards  : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards   : {iter_rollout_reward / num_updates:6.2f}"
-        line_value_loss = f"Value Loss        : {iter_v_loss / num_updates:6.2f}"
-        line_policy_loss = f"Policy Loss       : {iter_a_loss / num_updates:6.2f}"
+        line_value_loss = f"Value Loss        : {iter_v_loss:6.2f}"
+        line_policy_loss = f"Policy Loss       : {iter_a_loss:6.2f}"
+        line_entropy_loss = f"Entropy Loss      : {iter_d_entropy:6.2f}"
         
         print(f" ________________________________________________________________")
         print(f"|                                                                |")
@@ -219,6 +245,7 @@ def main(cfg: dict, args: argparse.Namespace):
         print(f"| {line_rollout_reward:<{content_width-1}}|")
         print(f"| {line_value_loss:<{content_width-1}}|")
         print(f"| {line_policy_loss:<{content_width-1}}|")
+        print(f"| {line_entropy_loss:<{content_width-1}}|")
         print(f"|________________________________________________________________|")
 
 

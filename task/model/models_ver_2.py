@@ -338,7 +338,7 @@ class RL_Policy(nn.Module):
 
     def get_value(self, inputs, rnn_hxs, masks, extras=None):
         value, _ = self.network(inputs, extras)
-        return value, None
+        return value
 
     def evaluate_actions(self, inputs, rnn_hxs, masks, action, extras=None):
         value, logits = self.network(inputs, extras)

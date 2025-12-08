@@ -185,9 +185,7 @@ class RolloutBuffer(object):
             self.value_preds[-1] = next_value
             gae = 0
             for step in reversed(range(self.rewards.size(0))):
-                delta = self.rewards[step] + gamma \
-                        * self.value_preds[step + 1] * self.masks[step + 1] \
-                        - self.value_preds[step]
+                delta = self.rewards[step] + gamma * self.value_preds[step + 1] * self.masks[step + 1] - self.value_preds[step]
                 gae = delta + gamma * lam * self.masks[step + 1] * gae
                 self.returns[step] = gae + self.value_preds[step]
         else:
@@ -203,8 +201,8 @@ class RolloutBuffer(object):
 
             Inputs:
                 advantages: GAE로부터 얻은 값과 기존 Value값을 통해 계산한 Advantages
-                num_mini_batch: 
-                max_batch_size:
+                num_mini_batch: 총 Batch 개수
+                max_batch_size: -1, 전체 Batch 모두 사용
                 rotation_augmentation: 맵 데이터에 대한 Rotation을 걸어, Data Augmentation을 수행할지에 대한 여부
                 ds : action에 대한 rotation aumentation을 수행할 때, State DownScaling (MaxPool)에 맞춰 액션을 보정하기 위한 상수
                      -> However, Centralized 방식에서는 Frontier Node선택이 액션이므로 다운 스케일링 보정 필요 X (값 = 1)
@@ -225,6 +223,8 @@ class RolloutBuffer(object):
         if verbose:
             logging.info(f"actual-batch-size: {len(idx)}/{batch_size - batch_begin}")
             logging.info(f"open-ratio: {self.open.sum()}/{self.open.size(0)}")
+        # 하나의 큰 배치에 총 몇개의 미니배치가 들어갈지 계산
+        # NOTE: num_mini_batch = 4, idx = 대부분 rollout * num_envs * num_agents * num_repeats  ===> mini_batch_size = 3 ===> 즉, 하나의 큰 배치에 미니배치 3개 들어감 
         mini_batch_size = len(idx) // num_mini_batch
         if max_batch_size > 0:
             mini_batch_size = min(max_batch_size, mini_batch_size)
@@ -235,18 +235,17 @@ class RolloutBuffer(object):
             for idx, indices in enumerate(sampler):
                 if idx >= num_mini_batch:
                     break
+                # [Rollout * num_envs * num_agents * num_repeats] 를 배치차원으로 하여 랜덤 샘플링
                 raw_data = {
                     'obs': self.obs[:-1].view(-1, *self.obs.size()[2:])[indices],
-                    'rec_states': self.rec_states[:-1].view(-1,
-                                                            self.rec_states.size(-1))[indices],
+                    'rec_states': self.rec_states[:-1].view(-1, self.rec_states.size(-1))[indices],
                     'actions': self.actions.view(-1, self.n_actions)[indices],
                     'value_preds': self.value_preds[:-1].view(-1)[indices],
                     'returns': self.returns[:-1].view(-1)[indices],
                     'masks': self.masks[:-1].view(-1)[indices],
                     'old_action_log_probs': self.action_log_probs.view(-1)[indices],
                     'adv_targ': advantages.view(-1)[indices],
-                    'extras': self.extras[:-1].view(-1, self.extras_size)[indices] \
-                        if self.has_extras else None,
+                    'extras': self.extras[:-1].view(-1, self.extras_size)[indices] if self.has_extras else None,
                     'augmentation': False
                 }
                 yield raw_data
