@@ -18,8 +18,9 @@ class PPOAgent(Agent):
         super().__init__(model, device, cfg)
 
         
-        self.actor_optimizer = self.model.actor_optimizer
-        self.critic_optimizer = self.model.critic_optimizer
+        self.optimizer = self.model.optimizer
+        # self.actor_optimizer = self.model.actor_optimizer
+        # self.critic_optimizer = self.model.critic_optimizer
 
         self.epoch = self.cfg["epoch"]
         self.mini_batch_size = self.cfg['mini_batch_size']
@@ -54,7 +55,7 @@ class PPOAgent(Agent):
             return 0, 0, 0
 
         # advantage 정규화
-        advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-5)
+        # advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-5)
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
@@ -72,7 +73,7 @@ class PPOAgent(Agent):
                 # for i in range(sample['obs'].shape[0]):
                 #     if torch.nonzero(sample['obs'][i, 1, :, :]).shape[0] <= torch.max(sample['actions'][i]):
                 #         raise ValueError("Action exceeds distribution")
-                values, action_log_probs, dist_entropy, _, action_feature = \
+                values, action_log_probs, dist_entropy, _, _ = \
                     self.model.evaluate_actions(
                         sample['obs'], sample['rec_states'],
                         sample['masks'], sample['actions'],
@@ -105,21 +106,22 @@ class PPOAgent(Agent):
                     value_loss = 0.5 * (returns - values).pow(2).mean()
 
                 
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
+                self.optimizer.zero_grad()
+                # self.actor_optimizer.zero_grad()
+                # self.critic_optimizer.zero_grad()
 
                 (value_loss * self.value_loss_coef + action_loss * self.policy_loss_coef - dist_entropy * self.entropy_loss_coef).backward()
                 
-                torch.nn.utils.clip_grad_norm_(self.model.network.actor.parameters(), self.grad_norm_clip)
-                torch.nn.utils.clip_grad_norm_(self.model.network.critic.parameters(), self.grad_norm_clip)
+                torch.nn.utils.clip_grad_norm_(self.model.network.parameters(), self.grad_norm_clip)
+                # torch.nn.utils.clip_grad_norm_(self.model.network.actor.parameters(), self.grad_norm_clip)
+                # torch.nn.utils.clip_grad_norm_(self.model.network.critic.parameters(), self.grad_norm_clip)
 
                 for name, p in self.model.network.named_parameters():
                     if p.grad is not None and not torch.isfinite(p.grad).all():
                         print(f"[NaN GRAD] {name} grad has NaN/Inf")
                         raise RuntimeError
 
-                self.actor_optimizer.step()
-                self.critic_optimizer.step()
+                self.optimizer.step()
 
                 if not augmentation:
                     value_loss_epoch += value_loss.item()
