@@ -58,9 +58,10 @@ def main(cfg: dict, args: argparse.Namespace):
     eval_env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False)
     pr = eval_env.cfg.pooling_downsampling_rate
     num_agents = cfg['env']['num_agent']
-    temp_H, temp_W = eval_env.map_info.H, eval_env.map_info.W 
-    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, temp_H // pr, temp_W // pr), dtype='uint8')
-    action_space = gym.spaces.Box(0, (temp_H // pr) * (temp_W // pr) - 1, (num_agents,), dtype='int32')
+    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, 
+                                              eval_env.obs_manager.global_map_size // pr, 
+                                              eval_env.obs_manager.global_map_size // pr), dtype='uint8')
+    action_space = gym.spaces.Box(0, (eval_env.obs_manager.global_map_size // pr) * (eval_env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
     del eval_env
     
     model_cfg = cfg['model']
@@ -120,7 +121,6 @@ def main(cfg: dict, args: argparse.Namespace):
         t2_rollout = time.time()
 
         # Perform learning updates using the collected data
-        t1 = time.time()
         iter_v_loss, iter_a_loss, iter_d_entropy = 0, 0, 0
         iter_per_step_reward, iter_rollout_reward = 0, 0
         
@@ -128,9 +128,9 @@ def main(cfg: dict, args: argparse.Namespace):
         total_episodes_completed = 0
         total_successes = 0
         total_coverage = 0.0
-        # NOTE: episode_step is still an average of local averages, but more accurate than before
         total_avg_episode_steps = 0.0
 
+        t1 = time.time()
         for buffer, rollout_info in zip(rollout_buffers, rollout_infos):
             # The buffer from the worker already has returns computed.
             value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))

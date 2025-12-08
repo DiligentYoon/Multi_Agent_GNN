@@ -41,7 +41,9 @@ class ObservationManager:
 
         # Initializing full map, down-scaled map, info
         # obs/frontier/all pos/all trajectory/explored/explorable/history pos/history goal
-        self.global_map = torch.zeros(8, self.global_map_h, self.global_map_w).float().to(device)
+        self.global_map_size = max(self.global_map_h, self.global_map_w)
+        self.global_map = torch.zeros(8, self.global_map_size, self.global_map_size).float().to(device)
+        self.row_offset = self.global_map_size - self.global_map_h
         # 1-2 cartesian global agent location, 3-6 local map boundary
         self.global_info = torch.zeros(self.num_robots, 6).long().to(device)
         
@@ -58,7 +60,7 @@ class ObservationManager:
 
 
     def world_to_grid_np(self, world: np.ndarray) -> np.ndarray:
-        H, W = self.global_map_h, self.global_map_w
+        H, W = self.global_map_size, self.global_map_size
         if world.ndim == 1:
             world = world.reshape(1, -1)
         x = world[:, 0]
@@ -72,7 +74,7 @@ class ObservationManager:
 
 
     def grid_to_world_np(self, grid: np.ndarray) -> np.ndarray:
-        H, W = self.global_map_h, self.global_map_w
+        H, W = self.global_map_size, self.global_map_size
         if grid.ndim == 1:
             grid = grid.reshape(1, -1)
         col = grid[:, 0]
@@ -103,7 +105,7 @@ class ObservationManager:
 
             self.local_map_boundary[e] = get_local_map_boundaries((agent_location_r, agent_location_c), 
                                                                   (self.local_map_w, self.local_map_h), 
-                                                                  (self.global_map_w, self.global_map_h)) # [col, row]
+                                                                  (self.global_map_size, self.global_map_size)) # [col, row]
             self.local_map_origins[e] = self.grid_to_world_np(np.array([self.local_map_boundary[e, 0], 
                                                                         self.local_map_boundary[e, 2]])) # [col, row] -> [x, y]
         self.local_pose = self.global_pose - self.local_map_origins # [x, y]
@@ -127,10 +129,34 @@ class ObservationManager:
             Returns:
                 Global_Input : Global Obs [8 + Num_Agent, H, W]
         """
-        self.global_map[0, :, :] = torch.from_numpy(obstacle).float()
-        self.global_map[1, :, :] = torch.from_numpy(frontier).float()
-        self.global_map[4, :, :] = torch.from_numpy(explored).float()
-        self.global_map[5, :, :] = torch.from_numpy(explorable).float()
+        if not np.all(obstacle.shape == self.global_map[0].shape):
+            current_h, current_w = obstacle.shape # (100, 500)
+            target_h, target_w = self.global_map.shape[1], self.global_map.shape[2] # (500, 500)
+
+            valid_obstacle = np.zeros((target_h, target_w))
+            valid_frontier = np.zeros((target_h, target_w))
+            valid_explored = np.zeros((target_h, target_w))
+            valid_explorable = np.zeros((target_h, target_w))
+
+            # 맨 왼쪽아래에 일관적으로 배치
+            start_row = self.row_offset
+            end_col = current_w
+            
+            valid_obstacle[start_row:, :end_col] = obstacle
+            valid_frontier[start_row:, :end_col] = frontier
+            valid_explored[start_row:, :end_col] = explored
+            valid_explorable[start_row:, :end_col] = explorable
+        else:
+            valid_obstacle = obstacle
+            valid_frontier = frontier
+            valid_explored = explored
+            valid_explorable = explorable
+
+        
+        self.global_map[0, :, :] = torch.from_numpy(valid_obstacle).float()
+        self.global_map[1, :, :] = torch.from_numpy(valid_frontier).float()
+        self.global_map[4, :, :] = torch.from_numpy(valid_explored).float()
+        self.global_map[5, :, :] = torch.from_numpy(valid_explorable).float()
         self.global_map[2, :, :].fill_(0.)
 
         lmb = self.local_map_boundary # [col, row]
@@ -140,9 +166,9 @@ class ObservationManager:
             agent_location_r, agent_location_c = agent_location[e, 1], agent_location[e, 0]
             lmb[e] = get_local_map_boundaries((agent_location_r, agent_location_c), 
                                               (self.local_map_w, self.local_map_h), 
-                                              (self.global_map_w, self.global_map_h)) # [col, row]
-            agent_location_r = max(0, min(self.global_map_h, agent_location_r))
-            agent_location_c = max(0, min(self.global_map_w, agent_location_c))
+                                              (self.global_map_size, self.global_map_size)) # [col, row]
+            agent_location_r = max(0, min(self.global_map_size, agent_location_r))
+            agent_location_c = max(0, min(self.global_map_size, agent_location_c))
             self.global_info[e, :2] = torch.tensor((agent_location_r, agent_location_c))
             self.global_map[[2, 6], agent_location_r, agent_location_c] = 1
             self.global_map[3, agent_location_r, agent_location_c] = 1
@@ -162,7 +188,7 @@ class ObservationManager:
         global_input[1, :, :][global_input[0, :, :].bool()] = 0
         global_input[6, :, :] -= global_input[2, :, :]
         global_input[7, :, :] = g_history
-        dist_input = torch.zeros((self.num_robots, self.global_map_h, self.global_map_w))
+        dist_input = torch.zeros((self.num_robots, self.global_map_size, self.global_map_size))
         obstacle = self.global_map[0, :, :].bool()
 
         rows = obstacle.any(1).cpu().numpy()
@@ -179,12 +205,12 @@ class ObservationManager:
             distance_field(dist_input[i, :, :], obstacle, optimized=(row, col))
 
         dist_input = dist_input.to(self.device)
-        dist_input[self.global_map[1:2, :, :].repeat(self.num_robots, 1, 1) == 0] = 40
+        dist_input[self.global_map[1:2, :, :].repeat(self.num_robots, 1, 1) == 0] = 4
         for i in range(self.num_robots):
             agent_cell_pos = self.world_to_grid_np(self.global_pose[i, :2]).reshape(-1)
-            dist_input[i, agent_cell_pos[1], agent_cell_pos[0]] = 40
+            dist_input[i, agent_cell_pos[1], agent_cell_pos[0]] = 4
         dist_input = -nn.MaxPool2d(self.pooling_downsampling)(-dist_input)
-        dist_input[dist_input > 40] = 40
+        dist_input[dist_input > 4] = 4
         global_input = torch.cat((global_input, dist_input), dim=0) # dim: [8 + Num_Agent, H, W]
 
         return global_input

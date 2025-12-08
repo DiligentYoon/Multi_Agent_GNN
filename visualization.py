@@ -164,22 +164,23 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
     ds = env.cfg.pooling_downsampling_rate
     target_candidates_idx = torch.nonzero(env.obs_buf[1, :, :]).cpu().numpy()
     upscaled_id = target_candidates_idx * ds + ds // 2 # [row, col]
-    target_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1)) # [rol, col] -> [col, row] -> [x, y]
+    target_candidates_rc = upscaled_id - np.array([env.obs_manager.row_offset, 0])
+    target_candidates_xy = env.map_info.grid_to_world_np(np.flip(target_candidates_rc, axis=1)) # [rol, col] -> [col, row] -> [x, y]
     fx, fy = zip(*[world_to_img(x, y) for x, y in target_candidates_xy])
     for ax in (ax_gt, ax_belief):
         ax.scatter(fx, fy, s=1, c=FRONTIER_COLORS[0], marker='o')
 
     # --- Unvalid Candidates ---
-    for i in range(env.num_agent):
-        dist_features = env.obs_buf[8 + i, :, :]
-        unvalid_target_idx = target_candidates_idx[
-            torch.nonzero(dist_features[env.obs_buf[1, :, :] > 0] > 1e5).squeeze(-1).cpu().numpy()]
-        upscaled_id = unvalid_target_idx * ds + ds // 2
-        unvalid_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1))
-        if unvalid_candidates_xy.shape[0] > 0:
-            fx, fy = zip(*[world_to_img(x, y) for x, y in unvalid_candidates_xy])
-            for ax in (ax_gt, ax_belief):
-                ax.scatter(fx, fy, s=1, color=FRONTIER_COLORS[1], marker='o')
+    # for i in range(env.num_agent):
+    #     dist_features = env.obs_buf[8 + i, :, :]
+    #     unvalid_target_idx = target_candidates_idx[
+    #         torch.nonzero(dist_features[env.obs_buf[1, :, :] > 0] > 1e5).squeeze(-1).cpu().numpy()]
+    #     upscaled_id = unvalid_target_idx * ds + ds // 2
+    #     unvalid_candidates_xy = env.map_info.grid_to_world_np(np.flip(upscaled_id, axis=1))
+    #     if unvalid_candidates_xy.shape[0] > 0:
+    #         fx, fy = zip(*[world_to_img(x, y) for x, y in unvalid_candidates_xy])
+    #         for ax in (ax_gt, ax_belief):
+    #             ax.scatter(fx, fy, s=1, color=FRONTIER_COLORS[1], marker='o')
 
 
     # --- Final Touches ---

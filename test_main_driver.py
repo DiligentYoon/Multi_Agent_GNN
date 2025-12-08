@@ -18,6 +18,7 @@ from task.env.nav_env import NavEnv
 from task.agent.sac import SACAgent
 from task.agent.ppo import Agent, PPOAgent
 from task.model.models import RL_ActorCritic
+from task.model.models_ver_2 import RL_Policy
 from task.buffer.rolloutbuffer import RolloutBuffer, CoMappingRolloutBuffer
 
 from visualization import draw_frame, plot_cbf_values
@@ -44,13 +45,20 @@ def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Spac
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
 
-    actor_critic = RL_ActorCritic(observation_space.shape, action_space,
-                                  model_type=model_cfg['model_type'],
-                                  base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
-                                               'use_history': model_cfg['use_history'],
-                                               'ablation': model_cfg['ablation']},
-                                  lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
-                                  eps=model_cfg['eps']).to(device)
+    actor_critic = RL_Policy(observation_space.shape, action_space,
+                             model_type=model_cfg['model_type'],
+                             base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                        'use_history': model_cfg['use_history'],
+                                        'ablation': model_cfg['ablation']},
+                             lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                             eps=model_cfg['eps']).to(device)
+    # actor_critic = RL_ActorCritic(observation_space.shape, action_space,
+    #                               model_type=model_cfg['model_type'],
+    #                               base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+    #                                            'use_history': model_cfg['use_history'],
+    #                                            'ablation': model_cfg['ablation']},
+    #                               lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+    #                               eps=model_cfg['eps']).to(device)
     return actor_critic
 
 
@@ -77,7 +85,7 @@ def create_agent(cfg: dict, model: RL_ActorCritic, num_agents: int, eval_freq: i
                                         num_agents=1, # Centralized Network
                                         obs_shape=observation_space.shape,
                                         action_space=action_space,
-                                        rec_state_size=model.rec_state_size,
+                                        rec_state_size=1,
                                         extras_size=num_agents * 6
                                         ).to(device)
         agent = PPOAgent(model, device, agent_cfg)
@@ -130,8 +138,10 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     # --- Agent & Models ---
     pr = env.cfg.pooling_downsampling_rate
     num_agents = cfg['env']['num_agent']
-    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, env.map_info.H // pr, env.map_info.W // pr), dtype='uint8')
-    action_space = gym.spaces.Box(0, (env.map_info.H // pr) * (env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
+    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, 
+                                              env.obs_manager.global_map_size // pr, 
+                                              env.obs_manager.global_map_size // pr), dtype='uint8')
+    action_space = gym.spaces.Box(0, (env.obs_manager.global_map_size // pr) * (env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
     actor_critic_model = create_model(cfg['model'], observation_space, action_space, device)
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
@@ -214,7 +224,7 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
                                                             rec_states,
                                                             mask,
                                                             info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
-                                                            deterministic=True)
+                                                            deterministic=False)
 
         # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
@@ -233,11 +243,13 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
             # info_t+1
             next_info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate
         )
-
+        # agent_indices = torch.arange(num_agents, device=actions.device)
+        # action_indices = actions.squeeze()
         print(f"Frontier Index: {actions.cpu().numpy()}")
-        print(f"Probability: {action_maps[0][actions].cpu().numpy()}")
+        # print(f"Probability: {action_maps[0][agent_indices, action_indices].cpu().numpy()}")
         print(f"Reward : {reward.item():.2f}")
         print(f'# of frontier (obs) : { torch.nonzero(obs[1, :, :]).shape[0] }')
+        torch.linspace(0, num_agents-1, num_agents, dtype=torch.long).reshape(1, -1)
 
         # --- Record data for final plots (once per RL step) ---
         if visualize:

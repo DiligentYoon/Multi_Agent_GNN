@@ -101,7 +101,8 @@ class NavEnv(Env):
                 state : state vector
                 info : additional information
         """
-        self.history_action_map = np.zeros((self.map_info.H // self.cfg.pooling_downsampling_rate, self.map_info.W // self.cfg.pooling_downsampling_rate))
+        self.history_action_map = np.zeros((self.obs_manager.global_map_size // self.cfg.pooling_downsampling_rate, 
+                                            self.obs_manager.global_map_size // self.cfg.pooling_downsampling_rate))
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         
         # Reset Function
@@ -130,7 +131,7 @@ class NavEnv(Env):
         frontier_idx = torch.nonzero(self.obs_buf[1, :, :]).cpu().numpy() # [F, 2]
         for i in range(self.num_agent):
             # Down Sampled 차원에서 History Map 업데이트
-            downsampled_id = frontier_idx[cpu_action[i], :] # TODO: 매핑관계 validation [1, 2]
+            downsampled_id = frontier_idx[cpu_action[i], :]
             self.history_action_map[downsampled_id[0], downsampled_id[1]] = 1
 
             # 실제 Map Scale로 Up-Scaling 및 유효성 검사
@@ -156,10 +157,13 @@ class NavEnv(Env):
                 closest_frontier_idx = np.argmin(distances)
                 
                 # 최종 타겟 할당
-                final_target_rc = absolute_frontier_coords[closest_frontier_idx]
+                target_rc = absolute_frontier_coords[closest_frontier_idx]
             else:
                 # 만약 해당 블록에 프론티어가 없다면 (이론상 드문 경우),
-                final_target_rc = center_point
+                target_rc = center_point
+            
+            # Upscaling된 Target Point를 실제 Belief Map에 맞춰 조정
+            final_target_rc = target_rc - np.array([self.obs_manager.row_offset, 0])
 
             # 보정된 Target Point를 최종 할당
             self.assigned_rc[i] = final_target_rc

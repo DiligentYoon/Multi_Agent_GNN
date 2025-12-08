@@ -54,14 +54,11 @@ class PPOAgent(Agent):
             return 0, 0, 0
 
         # advantage 정규화
-        advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-3)
+        advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-5)
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
 
-        # print("adv mean/std/min/max:", advantages.mean().item(), advantages.std().item(), advantages.min().item(), advantages.max().item())
-
-        # prev_weight = copy.deepcopy(self.model.network.state_dict())
         for e in range(self.epoch):
             data_generator = data.sample_mini_batch(advantages, 
                                                     self.mini_batch_size, 

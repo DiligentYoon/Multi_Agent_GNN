@@ -55,8 +55,10 @@ class RolloutWorker:
         
         pr = self.env.cfg.pooling_downsampling_rate
         num_agents = cfg['env']['num_agent']
-        self.observation_space = gym.spaces.Box(0, 1, (8 + num_agents, self.env.map_info.H // pr, self.env.map_info.W // pr), dtype='uint8')
-        self.action_space = gym.spaces.Box(0, (self.env.map_info.H // pr) * (self.env.map_info.W // pr) - 1, (num_agents,), dtype='int32')
+        self.observation_space = gym.spaces.Box(0, 1, (8 + num_agents, 
+                                                       self.env.obs_manager.global_map_size // pr, 
+                                                       self.env.obs_manager.global_map_size // pr), dtype='uint8')
+        self.action_space = gym.spaces.Box(0, (self.env.obs_manager.global_map_size // pr) * (self.env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
         
         actor_critic_model = self._create_model(cfg['model'])
         self.agent = PPOAgent(actor_critic_model, self.device, cfg['agent'])
