@@ -1,7 +1,7 @@
 
 ray:
-  num_cpus: 12
-  num_workers: 12
+  num_cpus: 16
+  num_workers: 16
 
 # Environment Settings
 env:
@@ -74,7 +74,7 @@ agent:
   policy_loss_coef: 5.0
 
   buffer:
-    rollout: 32
+    rollout: 24
 
   experiment:
     directory: "MARL"
@@ -90,8 +90,8 @@ model:
   ablation: false
 
   # Optimizer Paramters
-  actor_lr: 1e-3
-  critic_lr: 1e-3
+  actor_lr: 1e-4
+  critic_lr: 1e-4
   eps: 1e-6
     
 # Training Settings

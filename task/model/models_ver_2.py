@@ -16,6 +16,36 @@ def init_layer(layer, gain=1.0):
         nn.init.constant_(layer.bias, 0)
     return layer
 
+def log_sinkhorn_iterations(Z, log_mu, log_nu, iters: int):
+    """ Perform Sinkhorn Normalization in Log-space for stability"""
+    u, v = torch.zeros_like(log_mu), torch.zeros_like(log_nu)
+    for _ in range(iters):
+        u = log_mu - torch.logsumexp(Z + v.unsqueeze(1), dim=2)
+        v = log_nu - torch.logsumexp(Z + u.unsqueeze(2), dim=1)
+    return Z + u.unsqueeze(2) + v.unsqueeze(1)
+
+def log_optimal_transport(scores, alpha, iters: int):
+    """ Perform Differentiable Optimal Transport in Log-space for stability"""
+    b, m, n = scores.shape
+    one = scores.new_tensor(1)
+    ms, ns = (m*one).to(scores), (n*one).to(scores)
+
+    bins0 = alpha.expand(b, m, 1)
+    bins1 = alpha.expand(b, 1, n)
+    alpha = alpha.expand(b, 1, 1)
+
+    couplings = torch.cat([torch.cat([scores, bins0], -1),
+                           torch.cat([bins1, alpha], -1)], 1)
+
+    norm = - (ms + ns).log()
+    log_mu = torch.cat([norm.expand(m), ns.log()[None] + norm])
+    log_nu = torch.cat([norm.expand(n), ms.log()[None] + norm])
+    log_mu, log_nu = log_mu[None].expand(b, -1), log_nu[None].expand(b, -1)
+
+    Z = log_sinkhorn_iterations(couplings, log_mu, log_nu, iters)
+    Z = Z - norm  # multiply probabilities by M+N
+    return Z
+
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim, activation=nn.ReLU):
         super().__init__()
@@ -176,6 +206,8 @@ class MultiAgentActorCritic(nn.Module):
         # Distance Map 채널은 별도로 처리하므로 Encoder에는 넣지 않거나 포함해도 무방
         # 여기서는 전체를 다 넣어서 Feature를 뽑습니다.
         self.map_encoder = MapEncoder(self.input_ch, feature_dim=64)
+        self.bin_score = torch.nn.Parameter(torch.tensor(1.))
+        self.register_parameter('bin_score', self.bin_score)
         
         self.actor = BipartiteActor(map_feat_dim=64, agent_extra_dim=2, hidden_dim=hidden_dim)
         self.critic = ContextualCritic(map_feat_dim=64, agent_hidden_dim=64+2)
@@ -284,8 +316,10 @@ class MultiAgentActorCritic(nn.Module):
         final_mask = padding_mask.unsqueeze(1).expand(-1, num_agents, -1) | (dist_matrix >= 4.0)
         
         # 6. Forward Passes
-        logits = self.actor(agent_full_feat, frontier_map_feat, dist_matrix, final_mask)
+        actor_features = self.actor(agent_full_feat, frontier_map_feat, dist_matrix, final_mask)
         value = self.critic(map_feat, agent_full_feat).squeeze(0)
+
+        logits = log_optimal_transport(actor_features, self.bin_score, iters=5)[:, :-1, :-1].view(actor_features.shape)
         
         return value, logits
 
