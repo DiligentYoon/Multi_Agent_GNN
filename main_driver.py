@@ -104,7 +104,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
     # --- Training Loop ---
     total_timesteps = cfg['train']['timesteps']
-    rollout = num_workers * cfg['agent']['buffer']['rollout']
+    rollout = cfg['agent']['buffer']['rollout']
     
     
     per_step_reward = deque(maxlen=100)

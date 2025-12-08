@@ -1,7 +1,7 @@
 
 ray:
-  num_cpus: 6
-  num_workers: 3
+  num_cpus: 12
+  num_workers: 12
 
 # Environment Settings
 env:
