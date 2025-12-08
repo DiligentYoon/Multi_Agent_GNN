@@ -127,7 +127,8 @@ class BipartiteActor(nn.Module):
         # 3. Distance Bias Injection
         # dist_matrix: (B, N_A, N_F)
         # 거리가 멀수록(값이 클수록) 점수를 깎습니다.
-        dist_bias = - (dist_matrix.unsqueeze(1) * torch.abs(self.dist_weight))
+        dist_bias = 0
+        # dist_bias = - (dist_matrix.unsqueeze(1) * torch.abs(self.dist_weight))
         
         # 최종 Logits: Neural Score + Distance Bias
         final_logits = (scores + dist_bias).mean(dim=1) # Average over heads -> (B, N_A, N_F)
