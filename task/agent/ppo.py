@@ -54,8 +54,8 @@ class PPOAgent(Agent):
             print('empty samples ... skip !')
             return 0, 0, 0
 
-        # advantage 정규화
-        # advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-5)
+        # advantage 표준화
+        advantages = (advantages - valid_advantages.mean()) / (valid_advantages.std() + 1e-5)
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
