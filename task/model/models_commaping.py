@@ -445,12 +445,12 @@ class GNN(nn.Module):
 
 
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L15
-class RL_Policy(nn.Module):
+class RL_CoMapping_Policy(nn.Module):
 
     def __init__(self, obs_shape, action_space, model_type='gconv',
                  base_kwargs=None, lr=None, eps=None):
 
-        super(RL_Policy, self).__init__()
+        super(RL_CoMapping_Policy, self).__init__()
         if base_kwargs is None:
             base_kwargs = {}
 
@@ -465,11 +465,7 @@ class RL_Policy(nn.Module):
         else:
             raise NotImplementedError
 
-        self.actor_optimizer = optim.Adam(set(filter(lambda p: p.requires_grad,
-            self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,
-            self.dist.parameters())), lr=lr[0], eps=eps)
-        self.critic_optimizer = optim.Adam(filter(lambda p: p.requires_grad,
-            self.network.critic.parameters()), lr=lr[1], eps=eps)
+        self.optimizer = optim.Adam(self.network.parameters(), lr=lr[0], eps=eps)
 
         self.model_type = model_type
 
@@ -521,16 +517,18 @@ class RL_Policy(nn.Module):
         return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
 
     def load(self, path, device):
-        self.actor_optimizer = optim.Adam(set(filter(lambda p: p.requires_grad,
-            self.network.actor.parameters())).union(filter(lambda p: p.requires_grad,
-            self.dist.parameters())), lr=1e-3)
-        self.critic_optimizer = optim.Adam(filter(lambda p: p.requires_grad,
-            self.network.critic.parameters()), lr=1e-3)
-        # state_dict = torch.load(path, map_location=lambda storage, loc: storage)
+        # 파라미터 로드 전 Optimizer 초기화 (LR 초기화 효과)
+        # actor_params = list(self.network.actor.parameters())
+        # critic_params = list(self.network.critic.parameters()) + list(self.network.map_encoder.parameters())
+        
+        # self.actor_optimizer = optim.Adam(actor_params, lr=1e-3)
+        # self.critic_optimizer = optim.Adam(critic_params, lr=1e-3)
+
         state_dict = torch.load(path, map_location=device)
         self.network.load_state_dict(state_dict['network'])
-        self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
-        self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        # self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
+        # self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
         del state_dict
 
     def load_critic(self, path, device):
@@ -540,10 +538,14 @@ class RL_Policy(nn.Module):
         del state_dict
 
     def save(self, path):
+        # state = {
+        #     'network': self.network.state_dict(),
+        #     'actor_optimizer': self.actor_optimizer.state_dict(),
+        #     'critic_optimizer': self.critic_optimizer.state_dict(),
+        # }
         state = {
             'network': self.network.state_dict(),
-            'actor_optimizer': self.actor_optimizer.state_dict(),
-            'critic_optimizer': self.critic_optimizer.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
         }
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(state, path)

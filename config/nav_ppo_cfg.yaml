@@ -74,7 +74,7 @@ agent:
   policy_loss_coef: 5.0
 
   buffer:
-    rollout: 24
+    rollout: 16
 
   experiment:
     directory: "MARL"
@@ -86,7 +86,7 @@ model:
   # Model Configuration
   model_type: gnn
   num_gnn_layer: 3
-  use_history: false
+  use_history: true
   ablation: false
 
   # Optimizer Paramters

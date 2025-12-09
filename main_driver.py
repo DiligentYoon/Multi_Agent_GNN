@@ -31,6 +31,7 @@ from task.env.nav_env import NavEnv
 from task.worker.rolloutworker import RolloutWorker
 from task.agent.ppo import PPOAgent
 from task.model.models import RL_ActorCritic
+from task.model.models_commaping import RL_CoMapping_Policy
 from task.model.models_ver_2 import RL_Policy
 from task.buffer.rolloutbuffer import CoMappingRolloutBuffer
 from test_main_driver import viz_simulation_test
@@ -70,13 +71,13 @@ def main(cfg: dict, args: argparse.Namespace):
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
-    learner_model = RL_Policy(observation_space.shape, action_space,
+    learner_model = RL_CoMapping_Policy(observation_space.shape, action_space,
                                    model_type=model_cfg['model_type'],
                                    base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
                                                 'use_history': model_cfg['use_history'],
                                                 'ablation': model_cfg['ablation']},
-                                   lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
-                                   eps=model_cfg['eps']).to(device)
+                                                lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                                eps=model_cfg['eps']).to(device)
     learner_agent = PPOAgent(learner_model, device, cfg['agent'])
 
     main_buffer = CoMappingRolloutBuffer(cfg['agent']['buffer']['rollout'], 

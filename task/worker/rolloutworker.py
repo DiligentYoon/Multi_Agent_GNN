@@ -17,6 +17,7 @@ from task.env.nav_env import NavEnv
 from task.agent.ppo import PPOAgent
 from task.buffer.rolloutbuffer import CoMappingRolloutBuffer
 from task.model.models import RL_ActorCritic
+from task.model.models_commaping import RL_CoMapping_Policy
 from task.model.models_ver_2 import RL_Policy
 
 @ray.remote
@@ -78,14 +79,14 @@ class RolloutWorker:
         self.episode_is_done = True
 
 
-    def _create_model(self, model_cfg: dict) -> RL_Policy:
+    def _create_model(self, model_cfg: dict) -> RL_CoMapping_Policy:
         """
         Helper function to create a model instance.
         """
         for key, value in model_cfg.items():
             if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
                 model_cfg[key] = float(value)
-        return RL_Policy(self.observation_space.shape, self.action_space,
+        return RL_CoMapping_Policy(self.observation_space.shape, self.action_space,
                               model_type=model_cfg['model_type'],
                               base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
                                            'use_history': model_cfg['use_history'],
