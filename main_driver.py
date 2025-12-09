@@ -211,7 +211,7 @@ def main(cfg: dict, args: argparse.Namespace):
             os.makedirs(eval_dir, exist_ok=True)
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
             print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
-            t_r, c_r = viz_simulation_test(cfg, steps=20, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            t_r, c_r = viz_simulation_test(cfg, steps=10, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
             print(f"Total Reward / Coverage Rate : {t_r:.2f} / {c_r:.2f}")
         
         # Calculate true global averages for logging
