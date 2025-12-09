@@ -172,7 +172,7 @@ def main(cfg: dict, args: argparse.Namespace):
             main_buffer.returns[:, i].copy_(buffer.returns[:, 0].to(device))
 
 
-        iter_v_loss, iter_a_loss, iter_d_entropy = learner_agent.update(main_buffer)
+        iter_v_loss, iter_a_loss, iter_d_entropy, total_norm = learner_agent.update(main_buffer)
         main_buffer.after_update()
         t2 = time.time()
 
@@ -184,12 +184,6 @@ def main(cfg: dict, args: argparse.Namespace):
         if num_updates > 0:
             per_step_reward.append(iter_per_step_reward / num_updates)
             rollout_reward.append(iter_rollout_reward / num_updates)
-        
-        # Aggregate Gradient Norms
-        total_norm = 0
-        for p in learner_agent.model.network.actor.parameters():
-            if p.grad is not None:
-                total_norm += p.grad.data.norm(2).item()
 
         global_step += rollout
 

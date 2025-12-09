@@ -59,7 +59,7 @@ class PPOAgent(Agent):
         value_loss_epoch = 0
         action_loss_epoch = 0
         dist_entropy_epoch = 0
-
+        total_norm = 0
         for e in range(self.epoch):
             data_generator = data.sample_mini_batch(advantages, 
                                                     self.mini_batch_size, 
@@ -127,6 +127,11 @@ class PPOAgent(Agent):
                     value_loss_epoch += value_loss.item()
                     action_loss_epoch += action_loss.item()
                     dist_entropy_epoch += dist_entropy.item()
+                
+                # Aggregate Gradient Norms
+                for p in self.model.network.parameters():
+                    if p.grad is not None:
+                        total_norm += p.grad.data.norm(2).item()
         
         for k, v in self.model.network.state_dict().items():
             if torch.isnan(v).any():
@@ -139,4 +144,4 @@ class PPOAgent(Agent):
         action_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates
 
-        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch
+        return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, total_norm
