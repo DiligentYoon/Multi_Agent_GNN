@@ -55,7 +55,7 @@ env:
 
 # Agent Settings
 agent:
-  mini_batch_size: 8
+  mini_batch_size: 16
   max_batch_size: -1
   epoch: 2
   num_gae_block: 1
