@@ -71,7 +71,7 @@ def main(cfg: dict, args: argparse.Namespace):
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
-    learner_model = RL_ActorCritic(observation_space.shape, action_space,
+    learner_model = RL_Policy(observation_space.shape, action_space,
                                    model_type=model_cfg['model_type'],
                                    base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
                                                 'use_history': model_cfg['use_history'],

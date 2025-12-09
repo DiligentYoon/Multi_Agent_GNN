@@ -28,7 +28,7 @@ PATH = os.path.join(os.getcwd())
 SPECIFIC_PATH = ""
 
 
-def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> RL_ActorCritic:
+def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> RL_Policy:
     """
     Helper function to create models based on the config.
 
@@ -63,7 +63,7 @@ def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Spac
     return actor_critic
 
 
-def create_agent(cfg: dict, model: RL_ActorCritic, num_agents: int, eval_freq: int, 
+def create_agent(cfg: dict, model: RL_Policy, num_agents: int, eval_freq: int, 
                  observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> tuple[Agent, RolloutBuffer]:
     """
     Helper function to create agent and corresponding buffer based on the config.
