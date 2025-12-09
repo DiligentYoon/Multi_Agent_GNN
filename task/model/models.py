@@ -2,7 +2,7 @@ from copy import deepcopy
 import torch
 import os
 import torch.nn.functional as F
-
+import torch.optim as optim
 from torch import nn
 from torch.distributions import Categorical
 
@@ -450,8 +450,7 @@ class RL_ActorCritic(nn.Module):
         assert action_space.__class__.__name__ == "Box"
         self.num_action = action_space.shape[0]
 
-        self.actor_optimizer = torch.optim.Adam(self.network.actor.parameters(), lr=lr[0], eps=eps)
-        self.critic_optimizer = torch.optim.Adam(self.network.critic.parameters(), lr=lr[1], eps=eps)
+        self.optimizer = optim.Adam(self.network.parameters(), lr=lr[0], eps=eps)
 
         self.model_type = model_type
 
@@ -575,13 +574,11 @@ class RL_ActorCritic(nn.Module):
 
     def load(self, path, device):
         # Re-initialize optimizers before loading their state
-        self.actor_optimizer = torch.optim.Adam(self.network.actor.parameters(), lr=1e-3)
-        self.critic_optimizer = torch.optim.Adam(self.network.critic.parameters(), lr=1e-3)
-        
         state_dict = torch.load(path, map_location=device)
         self.network.load_state_dict(state_dict['network'])
-        self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
-        self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        # self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
+        # self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
         del state_dict
 
 
@@ -600,10 +597,14 @@ class RL_ActorCritic(nn.Module):
 
 
     def save(self, path):
+        # state = {
+        #     'network': self.network.state_dict(),
+        #     'actor_optimizer': self.actor_optimizer.state_dict(),
+        #     'critic_optimizer': self.critic_optimizer.state_dict(),
+        # }
         state = {
             'network': self.network.state_dict(),
-            'actor_optimizer': self.actor_optimizer.state_dict(),
-            'critic_optimizer': self.critic_optimizer.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
         }
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(state, path)
