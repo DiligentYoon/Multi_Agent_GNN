@@ -57,7 +57,7 @@ env:
 agent:
   mini_batch_size: 8
   max_batch_size: -1
-  epoch: 2
+  epoch: 4
   num_gae_block: 1
 
   discount_factor: 0.99
