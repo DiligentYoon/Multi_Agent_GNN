@@ -71,7 +71,7 @@ def main(cfg: dict, args: argparse.Namespace):
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
-    learner_model = RL_CoMapping_Policy(observation_space.shape, action_space,
+    learner_model = RL_Policy(observation_space.shape, action_space,
                                    model_type=model_cfg['model_type'],
                                    base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
                                                 'use_history': model_cfg['use_history'],
@@ -212,7 +212,7 @@ def main(cfg: dict, args: argparse.Namespace):
             os.makedirs(eval_dir, exist_ok=True)
             gif_path_eval = os.path.join(eval_dir, f"eval_iter_{iteration}.gif")
             print(f"--- Running Evaluation & Visualization at Iteration {iteration} ---")
-            t_r, c_r = viz_simulation_test(cfg, steps=10, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
+            t_r, c_r = viz_simulation_test(cfg, steps=40, is_train=False, gif_path=gif_path_eval, agent_model=learner_agent.model)
             print(f"Total Reward / Coverage Rate : {t_r:.2f} / {c_r:.2f}")
         
         # Calculate true global averages for logging
