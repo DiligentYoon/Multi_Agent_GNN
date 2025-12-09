@@ -173,6 +173,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
 
         iter_v_loss, iter_a_loss, iter_d_entropy = learner_agent.update(main_buffer)
+        main_buffer.after_update()
         t2 = time.time()
 
         # Aggregate and log losses
@@ -183,6 +184,12 @@ def main(cfg: dict, args: argparse.Namespace):
         if num_updates > 0:
             per_step_reward.append(iter_per_step_reward / num_updates)
             rollout_reward.append(iter_rollout_reward / num_updates)
+        
+        # Aggregate Gradient Norms
+        total_norm = 0
+        for p in learner_agent.model.network.actor.parameters():
+            if p.grad is not None:
+                total_norm += p.grad.data.norm(2).item()
 
         global_step += rollout
 
@@ -232,6 +239,7 @@ def main(cfg: dict, args: argparse.Namespace):
         line_value_loss = f"Value Loss        : {iter_v_loss:6.2f}"
         line_policy_loss = f"Policy Loss       : {iter_a_loss:6.2f}"
         line_entropy_loss = f"Entropy Loss      : {iter_d_entropy:6.2f}"
+        line_total_grad_norm = f"Total Grad Norm   : {total_norm:6.2f}"
         
         print(f" ________________________________________________________________")
         print(f"|                                                                |")
@@ -247,6 +255,7 @@ def main(cfg: dict, args: argparse.Namespace):
         print(f"| {line_value_loss:<{content_width-1}}|")
         print(f"| {line_policy_loss:<{content_width-1}}|")
         print(f"| {line_entropy_loss:<{content_width-1}}|")
+        print(f"| {line_total_grad_norm:<{content_width-1}}|")
         print(f"|________________________________________________________________|")
 
 

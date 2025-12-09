@@ -96,14 +96,14 @@ class PPOAgent(Agent):
                     continue
                 
                 if values.shape != returns.shape:
-                    values = values.view(1, -1)
+                    values = values.view(returns.shape)
 
                 if self.use_clipped_value_loss:
-                    value_losses = (values - returns).pow(2)
-                    value_losses_clipped = (torch.clamp(values, value_preds - self.clip_ratio, value_preds + self.clip_ratio) - returns).pow(2)
-                    value_loss = 0.5 * torch.max(value_losses, value_losses_clipped).mean()
+                    value_losses = F.mse_loss(values, returns)
+                    value_losses_clipped = F.mse_loss((torch.clamp(values, value_preds - self.clip_ratio, value_preds + self.clip_ratio)), returns)
+                    value_loss = torch.max(value_losses, value_losses_clipped)
                 else:
-                    value_loss = 0.5 * (returns - values).pow(2).mean()
+                    value_loss = F.mse_loss(values, returns)
 
                 
                 self.optimizer.zero_grad()
