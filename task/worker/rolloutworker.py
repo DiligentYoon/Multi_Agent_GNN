@@ -130,7 +130,7 @@ class RolloutWorker:
                 self.coverage_rate.append(self.env.prev_explored_region / (self.env.map_info.H * self.env.map_info.W))
                 self.cumulative_episode_step.append(copy.deepcopy(self.episode_step))
                 self.episode_step = 0
-                self.last_obs, _, self.last_info = self.env.reset()
+                self.last_obs, _, self.last_info = self.env.reset(episode_index=random.ranint(0, 100))
             
             # 버퍼에 초기 액션 세팅 + 스텝
             if buffer.step == 0:

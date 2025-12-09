@@ -10,6 +10,7 @@ import imageio
 import gymnasium as gym
 import datetime
 import copy
+import argparse
 
 from torch.utils.tensorboard import SummaryWriter
 from collections import deque
@@ -98,7 +99,7 @@ def create_agent(cfg: dict, model: RL_ActorCritic, num_agents: int, eval_freq: i
     return agent, buffer
 
 
-def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True, load_file_path: str = None):
+def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir: str = 'test_results', visualize: bool = True, load_file_path: str = None):
     """
     Runs a simulation test, generating a GIF and plots.
         Inputs:
@@ -145,8 +146,8 @@ def run_simulation_test(cfg: dict, steps: int, out_dir: str = 'test_results', vi
     actor_critic_model = create_model(cfg['model'], observation_space, action_space, device)
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
-    if load_file_path is not None:
-        agent.model.load(os.path.join(os.getcwd(), load_file_path), device=device)
+    if args.checkpoint is not None:
+        agent.model.load(args.checkpoint, device=device)
 
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
@@ -463,9 +464,15 @@ if __name__ == '__main__':
     # It's good practice to run tests with deterministic behavior
     torch.manual_seed(config['env']['seed'])
     np.random.seed(config['env']['seed'])
+
+    parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+
+    args = parser.parse_args()
     
     # Run the test with visualization enabled
-    run_simulation_test(config, 
+    run_simulation_test(args,
+                        config,
                         steps=20, 
                         visualize=True,
                         load_file_path=None)
