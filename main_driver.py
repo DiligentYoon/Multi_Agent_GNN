@@ -113,7 +113,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
     # --- Create Rollout Workers ---
     num_workers = cfg['ray']['num_workers']
-    workers = [RolloutWorker.remote(worker_id=i, cfg=cfg) for i in range(num_workers)]
+    workers = [RolloutWorker.remote(model_version=args.version, worker_id=i, cfg=cfg) for i in range(num_workers)]
     print(f"{num_workers} rollout workers created.")
 
     # --- Training Loop ---
