@@ -78,6 +78,7 @@ def main(cfg: dict, args: argparse.Namespace):
                                                 'ablation': model_cfg['ablation']},
                                                 lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
                                                 eps=model_cfg['eps']).to(device)
+    num_params = sum(p.numel() for p in learner_model.parameters() if p.requires_grad)
     learner_agent = PPOAgent(learner_model, device, cfg['agent'])
 
     main_buffer = CoMappingRolloutBuffer(cfg['agent']['buffer']['rollout'], 
@@ -172,7 +173,7 @@ def main(cfg: dict, args: argparse.Namespace):
             main_buffer.returns[:, i].copy_(buffer.returns[:, 0].to(device))
 
 
-        iter_v_loss, iter_a_loss, iter_d_entropy, total_norm = learner_agent.update(main_buffer)
+        iter_v_loss, iter_a_loss, iter_d_entropy, total_norm, kl = learner_agent.update(main_buffer)
         main_buffer.after_update()
         t2 = time.time()
 
@@ -233,7 +234,8 @@ def main(cfg: dict, args: argparse.Namespace):
         line_value_loss = f"Value Loss        : {iter_v_loss:6.2f}"
         line_policy_loss = f"Policy Loss       : {iter_a_loss:6.2f}"
         line_entropy_loss = f"Entropy Loss      : {iter_d_entropy:6.2f}"
-        line_total_grad_norm = f"Total Grad Norm   : {total_norm:6.2f}"
+        line_total_grad_norm = f"Total Grad Norm/Total Params   : {total_norm:6.2f}/{num_params}"
+        line_approx_kl = f"Approx KL Divergence : {kl:6.6f}"
         
         print(f" ________________________________________________________________")
         print(f"|                                                                |")
@@ -250,6 +252,7 @@ def main(cfg: dict, args: argparse.Namespace):
         print(f"| {line_policy_loss:<{content_width-1}}|")
         print(f"| {line_entropy_loss:<{content_width-1}}|")
         print(f"| {line_total_grad_norm:<{content_width-1}}|")
+        print(f"| {line_approx_kl:<{content_width-1}}|")
         print(f"|________________________________________________________________|")
 
 
