@@ -132,18 +132,21 @@ class RolloutWorker:
 
 
         # Collect a rollout fragment of a fixed length.
+        is_success = []  
+        coverage_rate = []
+        episode_step = [] 
         for i in range(self.rollout_fragment_length):
             # If the last episode was done, reset the environment.
             if self.episode_is_done:
                 if self.env.is_success and not self.first:
-                    self.is_success.append(1)
+                    is_success.append(1)
                 else:
                     if self.first:
                         self.first = False
                     else:
-                        self.is_success.append(0)
-                self.coverage_rate.append(self.env.prev_explored_region / (self.env.map_info.H * self.env.map_info.W))
-                self.cumulative_episode_step.append(copy.deepcopy(self.episode_step))
+                        is_success.append(0)
+                coverage_rate.append(self.env.prev_explored_region / (self.env.map_info.H * self.env.map_info.W))
+                episode_step.append(copy.deepcopy(self.episode_step))
                 self.episode_step = 0
                 self.last_obs, _, self.last_info = self.env.reset(episode_index=random.randint(0, 100))
             
@@ -216,18 +219,11 @@ class RolloutWorker:
         
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
 
-        # Avoid division by zero if deques are empty
-        if len(self.cumulative_episode_step) > 0:
-            episode_step = sum(self.cumulative_episode_step) / len(self.cumulative_episode_step)
-        else:
-            episode_step = 0
-
         # Return raw counts for global aggregation instead of local averages
         additional_info = {
             "episode_step": episode_step,
-            "total_successes": sum(self.is_success),
-            "episodes_completed": len(self.is_success),
-            "total_coverage": sum(self.coverage_rate),
+            "is_success": is_success,
+            "coverage_rate": coverage_rate,
         }
         
         # print(f"Worker {self.worker_id}: Finished sampling fragment.")

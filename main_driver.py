@@ -126,6 +126,10 @@ def main(cfg: dict, args: argparse.Namespace):
     value_losses = deque(maxlen=100)
     action_losses = deque(maxlen=100)
     dist_entropies = deque(maxlen=100)
+
+    success_rate_queue = deque(maxlen=500)
+    coverage_rate_queue= deque(maxlen=500)
+    episode_step_queue = deque(maxlen=500)
     
     global_step = 0
     iteration = 0
@@ -151,23 +155,17 @@ def main(cfg: dict, args: argparse.Namespace):
         # Perform learning updates using the collected data
         iter_v_loss, iter_a_loss, iter_d_entropy = 0, 0, 0
         iter_per_step_reward, iter_rollout_reward = 0, 0
-        
-        # Accumulators for true global metrics
-        total_episodes_completed = 0
-        total_successes = 0
-        total_coverage = 0.0
-        total_avg_episode_steps = 0.0
 
         t1 = time.time()
         for i, (buffer, rollout_info) in enumerate(zip(rollout_buffers, rollout_infos)):
-            # The buffer from the worker already has returns computed.
-            # value_loss, action_loss, dist_entropy = learner_agent.update(buffer.to(device))
-            
             # Aggregate raw counts from each worker
-            total_successes += rollout_info.get('total_successes', 0)
-            total_episodes_completed += rollout_info.get('episodes_completed', 0)
-            total_coverage += rollout_info.get('total_coverage', 0)
-            total_avg_episode_steps += rollout_info.get('episode_step', 0)
+            new_results = rollout_info.get('is_success', [])
+            new_coverages = rollout_info.get('coverage_rate', [])
+            new_steps = rollout_info.get('episode_step', [])
+            if len(new_results) > 0:
+                success_rate_queue.extend(new_results)
+                coverage_rate_queue.extend(new_coverages)
+                episode_step_queue.extend(new_steps)
 
             iter_per_step_reward += torch.sum(buffer.rewards).item() / rollout
             iter_rollout_reward += torch.sum(buffer.rewards).item()
@@ -215,7 +213,7 @@ def main(cfg: dict, args: argparse.Namespace):
             writer.add_scalar('Loss/Entropy', mean_d_entropy, global_step)
 
         if iteration % cfg['agent']['experiment']['checkpoint_interval'] == 0:
-            checkpoint_path = os.path.join(checkpoint_dir, f"agent_{global_step}.pt")
+            checkpoint_path = os.path.join(checkpoint_dir, f"agent_{global_step}_ver_{args.version}.pt")
             learner_agent.model.save(checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
         
@@ -230,9 +228,10 @@ def main(cfg: dict, args: argparse.Namespace):
         
         # Calculate true global averages for logging
         num_workers = num_updates
-        global_success_rate = (total_successes / total_episodes_completed) if total_episodes_completed > 0 else 0
-        global_coverage_rate = (total_coverage / total_episodes_completed) if total_episodes_completed > 0 else 0
-        global_avg_episode_steps = total_avg_episode_steps / num_workers if num_workers > 0 else 0
+        if len(success_rate_queue) > 0:
+            global_success_rate = np.mean(success_rate_queue)
+            global_coverage_rate = np.mean(coverage_rate_queue)
+            global_episode_steps = np.mean(episode_step_queue)
 
         # CLI Logging about the training process
         content_width = 64
@@ -240,7 +239,7 @@ def main(cfg: dict, args: argparse.Namespace):
         line_header = f"Training Iteration {iteration} Report"
         line_rollout_time = f"Rollout Time      : {t2_rollout - t1_rollout:6.2f} sec"
         line_train_time = f"Training Time     : {t2 - t1:6.2f} sec"
-        line_episode_step = f"Avg Episode Step  : {global_avg_episode_steps:6.2f} steps"
+        line_episode_step = f"Avg Episode Step  : {global_episode_steps:6.2f} steps"
         line_episode_success = f"Avg Success Rate  : {100 * global_success_rate:6.2f} %"
         line_per_step_reward = f"Per-Step Rewards  : {iter_per_step_reward / num_updates:6.2f}"
         line_rollout_reward = f"Rollout Rewards   : {iter_rollout_reward / num_updates:6.2f}"
@@ -248,7 +247,7 @@ def main(cfg: dict, args: argparse.Namespace):
         line_policy_loss = f"Policy Loss       : {iter_a_loss:6.2f}"
         line_entropy_loss = f"Entropy Loss      : {iter_d_entropy:6.2f}"
         line_total_grad_norm = f"Total Grad Norm   : {total_norm:6.2f}"
-        line_approx_kl = f"Approx KL : {kl:6.6f}"
+        line_approx_kl = f"Approx KL            : {kl:6.6f}"
         
         print(f" ________________________________________________________________")
         print(f"|                                                                |")

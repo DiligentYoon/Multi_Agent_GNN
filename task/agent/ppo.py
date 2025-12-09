@@ -125,9 +125,10 @@ class PPOAgent(Agent):
                 self.optimizer.step()
 
                 if not augmentation:
+                    num_frontiers = (sample['obs'][:, 1, :, :] > 0).float().sum(dim=(1, 2))
                     value_loss_epoch += value_loss.item()
                     action_loss_epoch += action_loss.item()
-                    dist_entropy_epoch += dist_entropy.item()
+                    dist_entropy_epoch += dist_entropy.item() / num_frontiers.mean().item()
                 
                 # Aggregate Gradient Norms
                 for p in self.model.network.parameters():

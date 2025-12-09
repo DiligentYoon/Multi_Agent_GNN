@@ -74,13 +74,13 @@ agent:
   policy_loss_coef: 5.0
 
   buffer:
-    rollout: 128
+    rollout: 64
 
   experiment:
     directory: "MARL"
     experiment_name: ""
     write_interval: 5
-    checkpoint_interval: 50
+    checkpoint_interval: 100
 
 model:
   # Model Configuration
@@ -96,6 +96,6 @@ model:
     
 # Training Settings
 train:
-  eval_freq: 50
+  eval_freq: 100
   max_episode: 1000
   timesteps: 5000000
