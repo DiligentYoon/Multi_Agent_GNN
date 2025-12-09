@@ -28,8 +28,8 @@ class NavEnvCfg(EnvCfg):
 
         # Reward Info
         self.reward_weights = {
-            "exploration": 0.005,
-            "success": 5.0,
+            "exploration": 0.002,
+            "success": 30.0,
             "per_step": 0.1,
             "connectivity": 0.1
         }

@@ -235,7 +235,7 @@ class NavEnv(Env):
         # Success Event Reward
         success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
         # Failure Penalty
-        failure_penalty = -0.5 * coeff["success"] * np.astype(self.is_failure, np.float32)
+        failure_penalty = -0.2 * coeff["success"] * np.astype(self.is_failure, np.float32)
         # # Connectivity Penalty
         # connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
