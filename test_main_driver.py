@@ -28,7 +28,7 @@ PATH = os.path.join(os.getcwd())
 SPECIFIC_PATH = ""
 
 
-def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> RL_Policy:
+def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Space, device: torch.device, model_version: int):
     """
     Helper function to create models based on the config.
 
@@ -45,25 +45,26 @@ def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Spac
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
-
-    actor_critic = RL_Policy(observation_space.shape, action_space,
-                             model_type=model_cfg['model_type'],
-                             base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
-                                        'use_history': model_cfg['use_history'],
-                                        'ablation': model_cfg['ablation']},
-                             lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
-                             eps=model_cfg['eps']).to(device)
-    # actor_critic = RL_ActorCritic(observation_space.shape, action_space,
-    #                               model_type=model_cfg['model_type'],
-    #                               base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
-    #                                            'use_history': model_cfg['use_history'],
-    #                                            'ablation': model_cfg['ablation']},
-    #                               lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
-    #                               eps=model_cfg['eps']).to(device)
+    if model_version == 1:
+        actor_critic = RL_ActorCritic(observation_space.shape, action_space,
+                                model_type=model_cfg['model_type'],
+                                base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                            'use_history': model_cfg['use_history'],
+                                            'ablation': model_cfg['ablation']},
+                                lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                eps=model_cfg['eps']).to(device)
+    elif model_version == 2:
+        actor_critic = RL_Policy(observation_space.shape, action_space,
+                                 model_type=model_cfg['model_type'],
+                                 base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                            'use_history': model_cfg['use_history'],
+                                            'ablation': model_cfg['ablation']},
+                                 lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                 eps=model_cfg['eps']).to(device)
     return actor_critic
 
 
-def create_agent(cfg: dict, model: RL_Policy, num_agents: int, eval_freq: int, 
+def create_agent(cfg: dict, model, num_agents: int, eval_freq: int, 
                  observation_space: gym.Space, action_space: gym.Space, device: torch.device) -> tuple[Agent, RolloutBuffer]:
     """
     Helper function to create agent and corresponding buffer based on the config.
@@ -116,21 +117,6 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     # --- Output Directory & Writer & Checkpoint ---
     # os.makedirs(out_dir, exist_ok=True)
     print(f"Evaluation Results will be saved to: {out_dir}")
-    start_time = datetime.datetime.now().strftime("%y-%m-%d_%H-%M-%S")
-
-    experiment_dir = os.path.join("results", f"{start_time}_{cfg['agent']['experiment']['directory']}")
-    # os.makedirs(experiment_dir, exist_ok=True)
-    print(f"Training Results will be saved to {experiment_dir}")
-
-    timesteps = cfg["train"]["timesteps"]
-    write_interval = cfg['agent']['experiment']['write_interval']
-    if write_interval == 'auto':
-        write_interval = int(timesteps / 10)
-    writer = SummaryWriter(log_dir=experiment_dir)
-
-    checkpoint_interval = cfg['agent']['experiment']['checkpoint_interval']
-    if checkpoint_interval == 'auto':
-        checkpoint_interval = int(timesteps / 10)
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
@@ -143,7 +129,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
                                               env.obs_manager.global_map_size // pr, 
                                               env.obs_manager.global_map_size // pr), dtype='uint8')
     action_space = gym.spaces.Box(0, (env.obs_manager.global_map_size // pr) * (env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
-    actor_critic_model = create_model(cfg['model'], observation_space, action_space, device)
+    actor_critic_model = create_model(cfg['model'], observation_space, action_space, device, args.version)
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
     if args.checkpoint is not None:
@@ -291,7 +277,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
         # --- Save GIF ---
         gif_path = os.path.join(out_dir, 'simulation_test.gif')
         print(f"Saving GIF to {gif_path}...")
-        imageio.mimsave(gif_path, frames, fps=20)
+        imageio.mimsave(gif_path, frames, fps=30)
         print("GIF saved.")
         
         # --- Generate and Save Plots ---
@@ -305,7 +291,7 @@ def viz_simulation_test(cfg: dict,
                         is_train: bool, 
                         steps: int,
                         gif_path: str = 'test_results', 
-                        agent_model: RL_ActorCritic = None):
+                        agent_model = None):
     """
     Runs a simulation test, generating a GIF and plots.
         Inputs:
@@ -448,7 +434,7 @@ def viz_simulation_test(cfg: dict,
     plt.close(fig)
     # --- Save GIF ---
     print(f"GIF saved at step {step_num+1}.")
-    imageio.mimsave(gif_path, frames, fps=20)
+    imageio.mimsave(gif_path, frames, fps=30)
 
     coverage_rate = 100 * env.prev_explored_region / (env.map_info.H * env.map_info.W)
 
@@ -467,12 +453,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+    parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
 
     args = parser.parse_args()
     
     # Run the test with visualization enabled
     run_simulation_test(args,
                         config,
-                        steps=20, 
+                        steps=150, 
                         visualize=True,
                         load_file_path=None)

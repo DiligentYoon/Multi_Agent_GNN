@@ -71,13 +71,25 @@ def main(cfg: dict, args: argparse.Namespace):
     for key, value in model_cfg.items():
         if key in ['actor_lr', 'critic_lr', 'eps'] and isinstance(value, str):
             model_cfg[key] = float(value)
-    learner_model = RL_Policy(observation_space.shape, action_space,
-                                   model_type=model_cfg['model_type'],
-                                   base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
-                                                'use_history': model_cfg['use_history'],
-                                                'ablation': model_cfg['ablation']},
-                                                lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
-                                                eps=model_cfg['eps']).to(device)
+    
+    if args.version == 1:
+        # Centarlized Actor Critic Model (One Categorical Distributions)
+        learner_model = RL_ActorCritic(observation_space.shape, action_space,
+                                        model_type=model_cfg['model_type'],
+                                        base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                                        'use_history': model_cfg['use_history'],
+                                                        'ablation': model_cfg['ablation']},
+                                        lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                        eps=model_cfg['eps']).to(device)
+    elif args.version == 2:
+        # Centarlized Actor Critic Model (Agent-wise Distributions)
+        learner_model = RL_Policy(observation_space.shape, action_space,
+                                    model_type=model_cfg['model_type'],
+                                    base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                                    'use_history': model_cfg['use_history'],
+                                                    'ablation': model_cfg['ablation']},
+                                                    lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                                    eps=model_cfg['eps']).to(device)
     num_params = sum(p.numel() for p in learner_model.parameters() if p.requires_grad)
     learner_agent = PPOAgent(learner_model, device, cfg['agent'])
 
@@ -281,6 +293,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+    parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
 
     args = parser.parse_args()
     main(cfg, args)
