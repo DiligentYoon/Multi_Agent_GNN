@@ -224,6 +224,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
         # CLI Logging about the training process
         content_width = 64
+        line_total_params = f"Total Trainable Parameters: {num_params}"
         line_header = f"Training Iteration {iteration} Report"
         line_rollout_time = f"Rollout Time      : {t2_rollout - t1_rollout:6.2f} sec"
         line_train_time = f"Training Time     : {t2 - t1:6.2f} sec"
@@ -234,14 +235,15 @@ def main(cfg: dict, args: argparse.Namespace):
         line_value_loss = f"Value Loss        : {iter_v_loss:6.2f}"
         line_policy_loss = f"Policy Loss       : {iter_a_loss:6.2f}"
         line_entropy_loss = f"Entropy Loss      : {iter_d_entropy:6.2f}"
-        line_total_grad_norm = f"Total Grad Norm/Total Params   : {total_norm:6.2f}/{num_params}"
-        line_approx_kl = f"Approx KL Divergence : {kl:6.6f}"
+        line_total_grad_norm = f"Total Grad Norm   : {total_norm:6.2f}"
+        line_approx_kl = f"Approx KL : {kl:6.6f}"
         
         print(f" ________________________________________________________________")
         print(f"|                                                                |")
         print(f"|{line_header.center(content_width)}|")
         print(f"|________________________________________________________________|")
         print(f"|                                                                |")
+        print(f"| {line_total_params:<{content_width-1}}|")
         print(f"| {line_rollout_time:<{content_width-1}}|")
         print(f"| {line_train_time:<{content_width-1}}|")
         print(f"| {line_episode_step:<{content_width-1}}|")

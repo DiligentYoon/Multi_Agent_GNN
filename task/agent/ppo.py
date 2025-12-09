@@ -148,5 +148,4 @@ class PPOAgent(Agent):
         action_loss_epoch /= num_updates
         dist_entropy_epoch /= num_updates
         approx_kl /= num_updates
-
         return value_loss_epoch, action_loss_epoch, dist_entropy_epoch, total_norm, approx_kl

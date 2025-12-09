@@ -88,7 +88,7 @@ class MapInfo:
         c_lo, c_hi = sorted((c1, c2))
         self.gt[r_lo:r_hi+1, c_lo:c_hi+1] = self.map_mask["occupied"]
 
-    def add_random_rect_obstacles(self, n: int = 10, 
+    def add_random_rect_obstacles(self, n: int = 0, 
                                   min_w_m: float = 0.05, min_h_m: float = 0.05,
                                   max_w_m: float = 0.1, max_h_m: float = 0.1,
                                   min_x_m: float = 0.25,
