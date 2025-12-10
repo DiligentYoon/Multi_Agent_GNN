@@ -16,18 +16,21 @@ from .nav_env_cfg import NavEnvCfg
 
 
 class NavEnv(Env):
-    def __init__(self, episode_index: int | np.ndarray, device: torch.device, cfg: dict, is_train: bool = True):
+    def __init__(self, episode_index: int | np.ndarray, device: torch.device, cfg: dict, is_train: bool = True, max_episode_steps: int = None):
         self.cfg = NavEnvCfg(cfg)
         super().__init__(self.cfg)
 
         # Simulation Parameters
         self.device = device
+        self.is_train = is_train
         self.seed = episode_index
         self.dt = self.cfg.physics_dt
         self.decimation = self.cfg.decimation
         self.neighbor_radius = self.cfg.d_conn * 1.5
-        self.max_episode_steps = self.cfg.max_episode_steps
-        self.is_train = is_train
+        if max_episode_steps is not None:
+            self.max_episode_steps = max_episode_steps
+        else:
+            self.max_episode_steps = self.cfg.max_episode_steps
 
         # Controller
         self.cfg.controller['a_max'] = self.max_lin_acc

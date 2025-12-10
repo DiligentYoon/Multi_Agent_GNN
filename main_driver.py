@@ -247,7 +247,7 @@ def main(cfg: dict, args: argparse.Namespace):
         line_policy_loss = f"Policy Loss       : {iter_a_loss:6.2f}"
         line_entropy_loss = f"Entropy Loss      : {iter_d_entropy:6.2f}"
         line_total_grad_norm = f"Total Grad Norm   : {total_norm:6.2f}"
-        line_approx_kl = f"Approx KL            : {kl:6.6f}"
+        line_approx_kl = f"Approx KL        : {kl:6.6f}"
         
         print(f" ________________________________________________________________")
         print(f"|                                                                |")

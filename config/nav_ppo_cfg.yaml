@@ -74,7 +74,7 @@ agent:
   policy_loss_coef: 1.5
 
   buffer:
-    rollout: 64
+    rollout: 256
 
   experiment:
     directory: "MARL"
@@ -90,8 +90,8 @@ model:
   ablation: false
 
   # Optimizer Paramters
-  actor_lr: 2e-5
-  critic_lr: 2e-5
+  actor_lr: 1e-5
+  critic_lr: 1e-5
   eps: 1e-6
     
 # Training Settings

@@ -306,7 +306,7 @@ def viz_simulation_test(cfg: dict,
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
-    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train)
+    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train, max_episode_steps=steps)
     # --- Agent & Models ---
     pr = env.cfg.pooling_downsampling_rate
     num_agents = cfg['env']['num_agent']
@@ -460,6 +460,6 @@ if __name__ == '__main__':
     # Run the test with visualization enabled
     run_simulation_test(args,
                         config,
-                        steps=150, 
+                        steps=250, 
                         visualize=True,
                         load_file_path=None)
