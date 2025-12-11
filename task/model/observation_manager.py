@@ -1,7 +1,11 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
 import torch
 import torch.nn as nn
 
+from sklearn.cluster import DBSCAN, KMeans
+from sklearn.decomposition import PCA
 from task.utils import distance_field
 
 
@@ -186,10 +190,14 @@ class ObservationManager:
         global_input = nn.MaxPool2d(self.pooling_downsampling)(self.global_map)
          # frontier 중, obstacle과 겹치는 부분은 삭제
         global_input[1, :, :][global_input[0, :, :].bool()] = 0
+        # frontier selection의 난이도를 낮추기 위한 clustering 수행
+        global_input[1, :, :] = self.clustering_frontier_map(global_input[1, :, :].cpu().numpy()).to(self.device)
         global_input[6, :, :] -= global_input[2, :, :]
         global_input[7, :, :] = g_history
         dist_input = torch.zeros((self.num_robots, self.global_map_size, self.global_map_size))
         obstacle = self.global_map[0, :, :].bool()
+
+        
 
         rows = obstacle.any(1).cpu().numpy()
         cols = obstacle.any(0).cpu().numpy()
@@ -214,3 +222,120 @@ class ObservationManager:
         global_input = torch.cat((global_input, dist_input), dim=0) # dim: [8 + Num_Agent, H, W]
 
         return global_input
+    
+
+    def clustering_frontier_map(self, 
+                                frontier_map: np.ndarray, 
+                                eps: float = 3, 
+                                min_samples: int = 4) -> torch.Tensor:
+        """
+        Frontier Map에서 마킹된 Frontier들을 대상으로 클러스터링 수행
+
+            Inputs:
+                frontier_map: Binary Frontier Map
+                eps: DBSCAN eps 파라미터이며, 픽셀 단위로 설정
+                min_samples: DBSCAN min_samples 파라미터
+            Returns:
+                frontier_clusters: Pytorch Tensor, (N, 2) shape의 유효한 Frontier Cluster 좌표 (row, col)
+        """
+        refined_map = torch.zeros_like(torch.from_numpy(frontier_map)).long()
+        frontiers = np.argwhere(frontier_map == 1)
+        if len(frontiers) == 0:
+            return refined_map
+        
+        # DBSCAN 수행
+        try:
+            db = DBSCAN(eps=eps, min_samples=min_samples).fit(frontiers)
+        except:
+            db = DBSCAN(eps=eps, min_samples=1).fit(frontiers)
+        unique_labels = set(db.labels_)
+        
+        # DBSCAN으로 생성된 각 클러스터에 대해 재귀적 기하 분할 수행
+        for label in unique_labels:
+            if label == -1:
+                continue
+            cluster_points = frontiers[db.labels_ == label]
+
+            refined_targets = np.array(self._recursive_split(cluster_points))
+            refined_map[refined_targets[:, 0], refined_targets[:, 1]] = 1
+        
+        return refined_map
+
+    def _get_medoid(self, points: np.ndarray) -> np.ndarray:
+            """
+            [Helper] 점들의 평균(Mean)을 구하고, 그 평균과 가장 가까운 '실제 점(Medoid)'을 반환
+            """
+            # 1. 무게 중심(Mean) 계산
+            centroid = points.mean(axis=0)
+            
+            # 2. 모든 점들과 무게 중심 사이의 유클리드 거리 계산
+            # axis=1을 따라 norm을 구함 -> (N,)
+            distances = np.linalg.norm(points - centroid, axis=1)
+            
+            # 3. 거리가 가장 짧은 점의 인덱스 찾기
+            nearest_idx = np.argmin(distances)
+            
+            # 4. 해당 점 반환
+            return points[nearest_idx]
+
+
+    def _recursive_split(self, points: np.ndarray, max_extent: float = 4, min_split_points: int = 4) -> list:
+        """
+        재귀적으로 클러스터를 검사하고 PCA 기반 K-Means로 분할
+        """
+        # 한 클러스터 내에 점이 너무 적으면 더 이상 쪼개지 않음 
+        if len(points) < min_split_points:
+            return [self._get_medoid(points)]
+
+        # 클러스터 내 Point들로 기하적 크기 검사
+        r_len = np.ptp(points[:, 0])
+        c_len = np.ptp(points[:, 1])
+        longest_dim = max(r_len, c_len)
+
+        # 조건 검사 후, 분할
+        if longest_dim > max_extent:
+            try:
+                # PCA를 이용한 초기화
+                pca = PCA(n_components=1)
+                pca.fit(points)
+                
+                direction = pca.components_[0]
+                center = points.mean(axis=0) 
+                std_dev = np.sqrt(pca.explained_variance_[0]) # 분산
+                
+                # 주축의 양 끝점으로 K-means의 초기 중심점 설정
+                init_centers = np.array([
+                    center + direction * std_dev,
+                    center - direction * std_dev
+                ])
+                
+                # K-Means 이중분할 수행
+                kmeans = KMeans(n_clusters=2, init=init_centers, n_init=1)
+                labels = kmeans.fit_predict(points)
+                
+                # 자식 클러스터 생성
+                points_a = points[labels == 0]
+                points_b = points[labels == 1]
+
+                # 자식이 0개가 되는 예외 상황 처리 
+                if len(points_a) == 0 or len(points_b) == 0:
+                     return [self._get_medoid(points)]
+                
+                # 재귀 호출
+                goals_a = self._recursive_split(points_a, max_extent, min_split_points)
+                goals_b = self._recursive_split(points_b, max_extent, min_split_points)
+                
+                return goals_a + goals_b
+
+            except Exception as e:
+                # PCA나 K-Means에서 예외 발생 시 안전하게 현재 평균 반환
+                return [self._get_medoid(points)]
+        else:
+            # 적당한 크기라면 현재 중심 반환
+            return [self._get_medoid(points)]
+
+
+
+
+
+

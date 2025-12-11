@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+os.environ["OMP_NUM_THREADS"] = "1"
 import yaml
 import torch
 import numpy as np
@@ -120,7 +120,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
-    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False)
+    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False, max_episode_steps=steps)
     print("Environment created and reset.")
     # --- Agent & Models ---
     pr = env.cfg.pooling_downsampling_rate

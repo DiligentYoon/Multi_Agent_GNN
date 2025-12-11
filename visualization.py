@@ -168,7 +168,7 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
     target_candidates_xy = env.map_info.grid_to_world_np(np.flip(target_candidates_rc, axis=1)) # [rol, col] -> [col, row] -> [x, y]
     fx, fy = zip(*[world_to_img(x, y) for x, y in target_candidates_xy])
     for ax in (ax_gt, ax_belief):
-        ax.scatter(fx, fy, s=1, c=FRONTIER_COLORS[0], marker='o')
+        ax.scatter(fx, fy, s=10, c=FRONTIER_COLORS[0], marker='o')
 
     # --- Unvalid Candidates ---
     # for i in range(env.num_agent):
