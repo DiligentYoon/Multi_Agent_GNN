@@ -238,7 +238,7 @@ class NavEnv(Env):
         # Success Event Reward
         success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
         # Failure Penalty
-        failure_penalty = -0.2 * coeff["success"] * np.astype(self.is_failure, np.float32)
+        failure_penalty = -0.8 * coeff["success"] * np.astype(self.is_failure, np.float32)
         # # Connectivity Penalty
         # connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
 
@@ -303,8 +303,8 @@ class NavEnv(Env):
         
         # 성공 & 실패 유무
         self.is_success = np.any(reached_goal)
-        # self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
-        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        # self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
         terminated = copy.deepcopy(self.is_success | self.is_failure)
