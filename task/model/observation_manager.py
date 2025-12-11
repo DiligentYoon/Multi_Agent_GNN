@@ -252,14 +252,14 @@ class ObservationManager:
 
         # 노이즈만 존재하는 최악의 경우, 노이즈라도 할당하기
         if len(unique_labels) == 1 and -1 in unique_labels:
-            refined_map(frontiers[:, 0], frontiers[:, 1]) = 1
+            refined_map[frontiers[:, 0], frontiers[:, 1]] = 1
             return refined_map
         
         # DBSCAN으로 생성된 각 클러스터에 대해 재귀적 기하 분할 수행
         for label in unique_labels:
             if label == -1:
                 continue
-            
+
             cluster_points = frontiers[db.labels_ == label]
             refined_targets = np.array(self._recursive_split(cluster_points))
             refined_map[refined_targets[:, 0], refined_targets[:, 1]] = 1
