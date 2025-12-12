@@ -1,8 +1,6 @@
 # The following code is largely borrowed from:
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/storage.py
 
-from collections import namedtuple
-
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -29,7 +27,6 @@ def rotate_scalar(x, theta, map_size):
     x, y = torch.cos(theta) * x - torch.sin(theta) * y + origin, torch.sin(theta) * x + torch.cos(theta) * y + origin
     x, y = torch.clamp(x.long(), 0, map_size - 1), torch.clamp(y.long(), 0, map_size - 1)
     return x * map_size + y
-
 
 
 class RolloutBuffer(object):

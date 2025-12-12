@@ -571,17 +571,6 @@ class RL_ActorCritic(nn.Module):
 
         return value, action_log_probs, dist_entropy, rnn_hxs, dist.probs
 
-
-    def load(self, path, device):
-        # Re-initialize optimizers before loading their state
-        state_dict = torch.load(path, map_location=device)
-        self.network.load_state_dict(state_dict['network'])
-        self.optimizer.load_state_dict(state_dict['optimizer'])
-        # self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
-        # self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
-        del state_dict
-
-
     def load_critic(self, path, device):
         state_dict = torch.load(path, map_location=device)['network']
         self.network.critic.load_state_dict({k.replace('critic.', ''):v for k,v in state_dict.items() if 'critic' in k})
@@ -594,17 +583,3 @@ class RL_ActorCritic(nn.Module):
         Returns the state of the agent for checkpointing.
         """
         return self.network.actor.state_dict()
-
-
-    def save(self, path):
-        # state = {
-        #     'network': self.network.state_dict(),
-        #     'actor_optimizer': self.actor_optimizer.state_dict(),
-        #     'critic_optimizer': self.critic_optimizer.state_dict(),
-        # }
-        state = {
-            'network': self.network.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-        }
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        torch.save(state, path)

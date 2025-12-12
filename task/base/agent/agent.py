@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import os
 import torch
 from typing import Mapping, Optional
 from torch.nn import Module
@@ -10,11 +11,6 @@ class Agent:
     This class lives in the main driver process. It owns the models and defines the
     core logic for action selection and training updates. It does NOT perform
     any direct file I/O or logging.
-
-    Responsibilities:
-    1. Holding the master models (actor, critic, etc.).
-    2. Providing the `update` method to be called by the driver for centralized training.
-    3. Providing the `act` method for inference (can be used by the driver or parts of it, like the policy network, can be shipped to workers).
     """
     def __init__(self,
                  model: Module,
@@ -29,7 +25,29 @@ class Agent:
         if mode == "train":
             self.model.train()
         elif mode == "eval":
-            self.model.eval() 
+            self.model.eval()
+
+    def load(self, path, device):
+        # Re-initialize optimizers before loading their state
+        state_dict = torch.load(path, map_location=device)
+        self.model.network.load_state_dict(state_dict['network'])
+        self.model.optimizer.load_state_dict(state_dict['optimizer'])
+        # self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
+        # self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
+        del state_dict
+    
+    def save(self, path):
+        # state = {
+        #     'network': self.network.state_dict(),
+        #     'actor_optimizer': self.actor_optimizer.state_dict(),
+        #     'critic_optimizer': self.critic_optimizer.state_dict(),
+        # }
+        state = {
+            'network': self.model.network.state_dict(),
+            'optimizer': self.model.optimizer.state_dict(),
+        }
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        torch.save(state, path)
 
     @abstractmethod
     def act(self, states: torch.Tensor) -> torch.Tensor:

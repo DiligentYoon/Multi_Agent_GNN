@@ -385,22 +385,6 @@ class RL_Policy(nn.Module):
 
         return value, action_log_probs, dist_entropy, rnn_hxs, dist.probs
 
-    # ---------------- Save / Load ----------------
-    def load(self, path, device):
-        # 파라미터 로드 전 Optimizer 초기화 (LR 초기화 효과)
-        # actor_params = list(self.network.actor.parameters())
-        # critic_params = list(self.network.critic.parameters()) + list(self.network.map_encoder.parameters())
-        
-        # self.actor_optimizer = optim.Adam(actor_params, lr=1e-3)
-        # self.critic_optimizer = optim.Adam(critic_params, lr=1e-3)
-
-        state_dict = torch.load(path, map_location=device)
-        self.network.load_state_dict(state_dict['network'])
-        self.optimizer.load_state_dict(state_dict['optimizer'])
-        # self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
-        # self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
-        del state_dict
-
     def load_critic(self, path, device):
         state_dict = torch.load(path, map_location=device)['network']
         critic_state = {k.replace('critic.', ''): v for k, v in state_dict.items() if 'critic.' in k}
@@ -409,16 +393,3 @@ class RL_Policy(nn.Module):
         self.network.critic.load_state_dict(critic_state)
         self.network.map_encoder.load_state_dict(encoder_state)
         del state_dict
-
-    def save(self, path):
-        # state = {
-        #     'network': self.network.state_dict(),
-        #     'actor_optimizer': self.actor_optimizer.state_dict(),
-        #     'critic_optimizer': self.critic_optimizer.state_dict(),
-        # }
-        state = {
-            'network': self.network.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-        }
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        torch.save(state, path)

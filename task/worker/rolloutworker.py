@@ -70,12 +70,8 @@ class RolloutWorker:
         self.agent = PPOAgent(actor_critic_model, self.device, cfg['agent'])
         
         self.rollout_fragment_length = self.cfg['agent']['buffer']['rollout']
-        self.rollout_log_interval = 100
 
         # --- Stateful variables for continuing episodes ---
-        self.cumulative_episode_step = deque(maxlen=100)
-        self.coverage_rate = deque(maxlen=100)
-        self.is_success = deque(maxlen=100)
         self.episode_step = 0
         self.first = True
         self.last_rec_states = None
@@ -136,7 +132,6 @@ class RolloutWorker:
         coverage_rate = []
         episode_step = [] 
         for i in range(self.rollout_fragment_length):
-            # If the last episode was done, reset the environment.
             if self.episode_is_done:
                 if self.env.is_success and not self.first:
                     is_success.append(1)
@@ -167,8 +162,6 @@ class RolloutWorker:
 
                 self.last_rec_states = buffer.rec_states[0][l:h]
                 self.last_mask = buffer.masks[0][l:h]
-
-            # print(f"[ Worker {self.worker_id} ] # of frontier at {buffer.step} step : { torch.nonzero(buffer.obs[buffer.step, 0, 1, :, :]).shape[0] }")
             
             with torch.no_grad():
                 values, actions, action_log_probs, \
@@ -190,11 +183,6 @@ class RolloutWorker:
                 next_info["additional_obs"].view(1, -1) // self.env.cfg.pooling_downsampling_rate
             )
 
-            # if i % self.rollout_log_interval == 0 and i > 0:
-            #     print(f"Worker {self.worker_id}: Collected {i} steps of rollout.")
-            #     print(f"Mean Rewards : {sum(self.per_step_reward) / len(self.per_step_reward):.2f}")
-
-
             # Update state for the next step
             self.last_obs = next_obs
             self.last_info = next_info
@@ -203,7 +191,7 @@ class RolloutWorker:
             self.episode_is_done = done.item()
             self.episode_step += 1
         
-        # --- After the loop, compute the value for the last state ---
+        # After the loop, compute the value for the last state
         with torch.no_grad():
             if self.episode_is_done:
                 # If the episode ended, the value of the terminal state is 0.
@@ -219,14 +207,12 @@ class RolloutWorker:
         
         buffer.compute_returns(next_value.detach(), True, self.agent.cfg['discount_factor'], self.agent.cfg['gae_lambda'])
 
-        # Return raw counts for global aggregation instead of local averages
         additional_info = {
             "episode_step": episode_step,
             "is_success": is_success,
             "coverage_rate": coverage_rate,
         }
         
-        # print(f"Worker {self.worker_id}: Finished sampling fragment.")
         return buffer, additional_info
 
 

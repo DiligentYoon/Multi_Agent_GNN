@@ -473,138 +473,12 @@ def global_frontier_marking(map_info):
 
     return frontier_belief
 
-
-def local_region_clustering(regions, scores, eps=0.1, min_samples=3):
-    """
-        Information Gain 기반의 Regions Clustering을 수행.
-
-    """
-    scores_np = np.array(scores).reshape(-1, 1)
-    try:
-        db = DBSCAN(eps=eps, min_samples=min_samples).fit(scores_np)
-    except:
-        db = DBSCAN(eps=eps, min_samples=1).fit(scores_np)
-    labels = db.labels_ 
-
-    clusters = {}
-    for i, label in enumerate(labels):
-        label = int(label)
-
-        if label not in clusters:
-            clusters[label] = {'regions':[], 'scores': []}
-        
-        clusters[label]['regions'].append(regions[i])
-        clusters[label]['scores'].append(scores[i])
-
-    return clusters
-
-
-def minimum_offset_prob(x):
-    """
-        음수 Score를 올바르게 확률로 변환하기 위한 선형 Shifting
-
-        Input :
-            x : scores
-    """
-    if isinstance(x, list):
-        x = np.array(x)
-    if x.size == 0:
-        return [] # 빈 리스트 처리
-
-    min_val = np.min(x)
-    shift = abs(min_val) if min_val < 0 else 0.0
-
-    weighted_values = x + shift
-    
-    total_sum = np.sum(weighted_values)
-
-    if total_sum == 0:
-        # 모든 영역의 가중치가 0인 경우, 모든 셀에 동일한 확률 부여
-        num_items = len(weighted_values)
-        if num_items == 0:
-            return []
-        return [1.0 / num_items] * num_items
-    
-    # 3. 정규화된 확률 반환
-    probabilities = weighted_values / total_sum
-    return probabilities.tolist()
-
-
-def sample_k_targets_in_multi_regions_value(map_info, cluster_info, k, rng):
-    """
-        Local 분할 영역의 Cluster를 이용한 Target Point Sampling
-        
-        Inputs:
-            maps : map_info 객체 (frontier가 마킹되어있는 beliefMap을 사용 가능함)
-            Cluster_info : 군집 정보 {regions, scores} = 속한 영역들과, 그에 대응하는 점수 정보
-    """
-    bel = map_info.belief
-    map_mask = map_info.map_mask
-    if rng is None:
-        rng = np.random.default_rng()
-    else:
-        rng = np.random.default_rng(int(rng))
-    cluster_total_scores = []
-    cluster_labels = []
-    per_cluster_data = {}
-
-    # 각 클러스터에서 Score Weighted Uniform Sampling
-    for label, data in cluster_info.items():
-        if label == -1:
-            continue
-        
-        cluster_regions = data['regions']
-        cluster_scores = data['scores']
-        if not cluster_regions:
-            continue
-        
-        region_scores = []
-        for i in range(len(cluster_regions)):
-            (r0, r1, c0, c1) = cluster_regions[i]
-            area = max(1, (r1 - r0) * (c1 - c0))
-            score = cluster_scores[i]
-            region_scores.append(score * area)
-        # 단일 클러스터에 대한 정보 저장
-        cluster_total_score = sum(region_scores)
-        cluster_labels.append(label)
-        cluster_total_scores.append(cluster_total_score)
-
-        region_probs = minimum_offset_prob(region_scores)
-        per_cluster_data[label] = {'region_probs': region_probs}
-
-    cluster_probs = minimum_offset_prob(cluster_total_scores)
-
-    # K개의 Sampling Point 생성
-    targets_rc = []
-    targets_prob = []
-    for _ in range(k):
-        target_cluster_id = rng.choice(cluster_labels, p=cluster_probs)
-
-        regions_in_cluster = cluster_info[target_cluster_id]['regions']
-        region_probs = per_cluster_data[target_cluster_id]['region_probs']
-
-        target_region_id = rng.choice(len(regions_in_cluster), p=region_probs)
-        (r0, r1, c0, c1) = regions_in_cluster[target_region_id]
-
-        while True:
-            r = rng.integers(r0, r1)
-            c = rng.integers(c0, c1)
-            if bel[r, c] == map_mask["occupied"]:
-                continue
-            targets_rc.append((r, c))
-            break
-        targets_prob.append(region_probs[target_region_id])
-    
-    return targets_rc, targets_prob, np.array(cluster_labels)
-
-
 def pair_cost(maps, robot_pos, target_rc):
     ax, ay = robot_pos
     tr, tc = int(target_rc[0]), int(target_rc[1])
     tx, ty = maps.grid_to_world(tr, tc)
 
     return float(np.hypot(tx - ax, ty - ay))
-
 
 def assign_targets_hungarian(maps, robot_pos, targets_rc, num_agent):
     """
@@ -623,10 +497,9 @@ def assign_targets_hungarian(maps, robot_pos, targets_rc, num_agent):
 
     return assigned
 
-
 def kmeans(map_info, k):
     """
-    Calculates k-means clustering with the Intersection over Union (IoU) metric.
+    Calculates K-means clustering with the Intersection over Union (IoU) metric.
         
         Inputs:
             map_info: Map Info for belief & frontier map
@@ -658,7 +531,7 @@ def kmeans(map_info, k):
     # K-means Algorihm 정의대로 K개의 Cluster 랜덤 생성
     cluster_idx = cluster_idx[:k] 
 
-    for count in range(5):
+    for _ in range(5):
 
         for k_i, ci in enumerate(cluster_idx):
             # Frontier Cluster의 중심점

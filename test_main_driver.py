@@ -133,7 +133,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     agent, buffer      = create_agent(cfg['agent'], actor_critic_model, num_agents,
                                       cfg['train']['eval_freq'], observation_space, action_space, device)
     if args.checkpoint is not None:
-        agent.model.load(args.checkpoint, device=device)
+        agent.load(args.checkpoint, device=device)
 
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []

@@ -108,7 +108,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
     if args.checkpoint is not None:
         file_path = args.checkpoint
-        learner_agent.model.load(file_path, device)
+        learner_agent.load(file_path, device)
         print(f"Loaded checkpoint from {file_path}")
 
     # --- Create Rollout Workers ---
@@ -214,7 +214,7 @@ def main(cfg: dict, args: argparse.Namespace):
 
         if iteration % cfg['agent']['experiment']['checkpoint_interval'] == 0:
             checkpoint_path = os.path.join(checkpoint_dir, f"agent_{global_step}_ver_{args.version}.pt")
-            learner_agent.model.save(checkpoint_path)
+            learner_agent.save(checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
         
         # Evaluation and Visualization

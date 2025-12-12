@@ -5,7 +5,6 @@ from typing import Tuple, List
 from task.base.env.env import Env
 from task.controller.hocbf import DifferentiableHOCBFLayer
 from task.graph.graph import ConnectivityGraph
-from task.graph.kdtree import RegionKDTree
 from task.model.observation_manager import ObservationManager
 from task.planner.astar import *
 from task.utils import *
@@ -43,7 +42,7 @@ class NavEnv(Env):
         self.controller = DifferentiableHOCBFLayer(cfg=self.cfg.controller, device=self.device)
 
         # Planning State
-        obs_cfg = {
+        manager_cfg = {
             "num_robots": self.num_agent,
             "unit_size_m": self.map_info.res_m,
             "global_map_w": self.map_info.W,
@@ -52,8 +51,7 @@ class NavEnv(Env):
             "local_map_h": self.map_info.H // self.cfg.downsampling_rate,
             "pooling_downsampling": self.cfg.pooling_downsampling_rate
         }
-        self.obs_manager = ObservationManager(cfg=obs_cfg, device=self.device)
-        self.global_kd_tree = RegionKDTree((0, self.map_info.H, 0, self.map_info.W), valid_threshold=0.05)
+        self.obs_manager = ObservationManager(cfg=manager_cfg, device=self.device)
         self.robot_speeds = np.zeros(self.num_agent, dtype=np.float32)
         self.local_frontiers = np.zeros((self.num_agent, self.cfg.num_rays, 2), dtype=np.float32)
         self.root_mask = np.zeros(self.num_agent, dtype=np.int_)
@@ -64,7 +62,6 @@ class NavEnv(Env):
 
         self.obstacle_states = np.zeros((self.num_agent, self.cfg.max_obs, 2), dtype=np.float32)
         self.neighbor_states = np.zeros((self.num_agent, self.cfg.max_agents-1, 4), dtype=np.float32)
-        self.neighbor_ids = np.zeros((self.num_agent, self.cfg.max_agents-1), dtype=np.int_)
 
         self.assigned_rc = np.zeros((self.num_agent, 2), dtype=np.long)
 
@@ -420,7 +417,6 @@ class NavEnv(Env):
         raise RuntimeError(f"No valid starting positions found within {max_attempts}")
     
 
-
     def detect_frontier(self, 
                         agent_id: int) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -498,8 +494,6 @@ class NavEnv(Env):
                 frontier_rc.append((r, c))
     
         return np.array(frontier_local), np.array(frontier_rc)
-
-
 
 
     def update_neighbor_info(self, agent_id: int, robot_pos: np.ndarray):
@@ -655,47 +649,34 @@ class NavEnv(Env):
             
 
             # ==== Path Planning ====
-            replan = True
-            current_path_cells = self.agent_paths[i]
-            current_target_cell = self.agent_path_targets[i]
 
-            # 1. 맨 처음이거나 경로가 없는 경우
-            # if current_path_cells is None:
-            #     replan = True
-            # # 2. 타겟 포인트가 바뀐 경우
-            # elif not np.array_equal(end_cell, current_target_cell):
-            #     replan = True
-            # # 3. 기존 경로가 더 이상 유효하지 않은 경우 (장애물 충돌)
-            # elif not is_path_valid(self.map_info, np.array(current_path_cells)):
-            #     replan = True
-
-            if replan:
-                path_cells = astar_search(self.map_info,
-                                          start_pos=np.flip(start_cell),
-                                          end_pos=np.flip(end_cell),
-                                          agent_id=i)               # (row, col)
-                if path_cells is not None and len(path_cells) > 0:
-                    self.agent_paths[i] = path_cells                # (row, col)
-                    self.agent_path_targets[i] = end_cell           # (row, col)
-                    self.is_valid_path[i] = True
-                else:
-                    # 경로 생성 실패 시, 현재 위치 고정
-                    self.is_valid_path[i] = False
-                    self.agent_paths[i] = np.flip(start_cell)
-                    self.agent_path_targets[i] = start_cell
-                
-                path_cells = self.agent_paths[i]
-
+            # if replan:
+            path_cells = astar_search(self.map_info,
+                                      start_pos=np.flip(start_cell),
+                                      end_pos=np.flip(end_cell),
+                                      agent_id=i)               # (row, col)
+            if path_cells is not None and len(path_cells) > 0:
+                self.agent_paths[i] = path_cells                # (row, col)
+                self.agent_path_targets[i] = end_cell           # (row, col)
+                self.is_valid_path[i] = True
             else:
-                # 기존 경로 유지
-                path_cells = self.agent_paths[i]
-                if len(path_cells) > 1:
-                    path_world_coords = self.map_info.grid_to_world_np(np.flip(path_cells, axis=1)) # (row, col) -> (col, row) -> (x, y)
-                    distances = np.linalg.norm(path_world_coords - pos_i, axis=1)
-                    closest_idx = np.argmin(distances)
-                    # 가장 가까운 지점부터 끝까지의 경로를 새로운 경로로 사용
-                    path_cells = path_cells[closest_idx:]
-                    self.agent_paths[i] = path_cells
+                # 경로 생성 실패 시, 현재 위치 고정
+                self.is_valid_path[i] = False
+                self.agent_paths[i] = np.flip(start_cell)
+                self.agent_path_targets[i] = start_cell
+            
+            path_cells = self.agent_paths[i]
+
+            # else:
+            #     # 기존 경로 유지
+            #     path_cells = self.agent_paths[i]
+            #     if len(path_cells) > 1:
+            #         path_world_coords = self.map_info.grid_to_world_np(np.flip(path_cells, axis=1)) # (row, col) -> (col, row) -> (x, y)
+            #         distances = np.linalg.norm(path_world_coords - pos_i, axis=1)
+            #         closest_idx = np.argmin(distances)
+            #         # 가장 가까운 지점부터 끝까지의 경로를 새로운 경로로 사용
+            #         path_cells = path_cells[closest_idx:]
+            #         self.agent_paths[i] = path_cells
 
             if path_cells is not None and len(path_cells) > 0:
                 # Path 생성된 경우
