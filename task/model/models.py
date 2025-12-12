@@ -507,7 +507,6 @@ class RL_ActorCritic(nn.Module):
         dist = Categorical(logits=logits_tensor)
 
         if deterministic:
-            _, action = torch.topk(logits_tensor, k=self.num_action, dim=-1)
             valid_count = logits_tensor.size(-1)
             k_to_select = min(self.num_action, valid_count)
             

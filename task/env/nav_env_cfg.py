@@ -22,7 +22,8 @@ class NavEnvCfg(EnvCfg):
 
         # Controller Cfg
         self.d_conn = 0.5
-        self.d_safe = 0.02
+        self.d_safe = 0.03
+        self.target_dist = 0.04
         self.max_obs = self.num_rays
         self.max_agents = self.num_agent
 
@@ -31,7 +32,8 @@ class NavEnvCfg(EnvCfg):
             "exploration": 0.002,
             "success": 30.0,
             "per_step": 0.1,
-            "connectivity": 0.1
+            "connectivity": 0.1,
+            "action": 0.2
         }
 
 

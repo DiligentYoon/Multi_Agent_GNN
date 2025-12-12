@@ -30,7 +30,7 @@ def astar_search(map_info: MapBase,
                  start_pos: np.ndarray | tuple, 
                  end_pos: np.ndarray | tuple,
                  agent_id: int,
-                 inflation_radius_cells: int = 3) -> np.ndarray | None:
+                 inflation_radius_cells: int = 4) -> np.ndarray | None:
     """
     A* 알고리즘 기반 최적경로 탐색
     """

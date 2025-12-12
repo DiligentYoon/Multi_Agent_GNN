@@ -70,6 +70,7 @@ class NavEnv(Env):
         self.obstacle_states = np.zeros((self.num_agent, self.cfg.max_obs, 2), dtype=np.float32)
         self.neighbor_states = np.zeros((self.num_agent, self.cfg.max_agents-1, 4), dtype=np.float32)
 
+        self.prev_assigned_rc = np.zeros((self.num_agent, 2), dtype=np.long)
         self.assigned_rc = np.zeros((self.num_agent, 2), dtype=np.long)
 
         # Replanning State
@@ -238,15 +239,18 @@ class NavEnv(Env):
         explored_reward = coeff["exploration"] * (explored_region - self.prev_explored_region)
         self.prev_explored_region = explored_region
         # Per-step Penalty
-        per_step_penalty = -coeff["per_step"]
+        # per_step_penalty = -coeff["per_step"]
         # Success Event Reward
         success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
         # Failure Penalty
         failure_penalty = -0.8 * coeff["success"] * np.astype(self.is_failure, np.float32)
         # # Connectivity Penalty
         # connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
+        # Action Penalty
+        action_penalty = - coeff["action"] * self.map_info.res_m * np.sum(np.linalg.norm(self.prev_assigned_rc - self.assigned_rc, axis=1))
+        self.prev_assigned_rc = copy.deepcopy(self.assigned_rc)
 
-        return explored_reward + per_step_penalty + success_reward + failure_penalty
+        return explored_reward + action_penalty + success_reward + failure_penalty
 
 
     def _get_dones(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -696,7 +700,7 @@ class NavEnv(Env):
                 optimal_traj = np.array([self.robot_locations[i]])
             optimal_traj_local = world_to_local(w1=pos_i, w2=optimal_traj, yaw=yaw_i)
             distances = np.linalg.norm(optimal_traj_local, axis=1)
-            ids = np.where(distances >= self.cfg.d_safe*2)[0]
+            ids = np.where(distances >= self.cfg.target_dist)[0]
             if len(ids) > 0:
                 target_pos = optimal_traj_local[ids[0]]
             else:

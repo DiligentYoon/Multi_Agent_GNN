@@ -111,7 +111,7 @@ class MapBase:
                 self.add_rect_obstacle(x, y, x+w, y+h)
                 count += 1
 
-    def check_validity(self, x, y, w, h, min_dist: float = 0.05):
+    def check_validity(self, x, y, w, h, min_dist: float = 0.1):
             """
             생성하려는 장애물 영역(x, y, w, h)을 min_dist 만큼 확장하여 검사
             """
@@ -286,7 +286,7 @@ class RandomObstacleMap(MapBase):
         self.initialization()
         self.add_border_walls()
         self.add_start_and_goal_zones()
-        self.add_random_obstacles(n=10, min_m=0.2, max_m=0.3, seed=seed)
+        self.add_random_obstacles(n=15, min_m=0.2, max_m=0.3, seed=seed)
 
 
 
