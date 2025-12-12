@@ -31,7 +31,8 @@ class RolloutWorker:
                  model_version: int,
                  worker_id: int, 
                  cfg: dict,
-                 device: torch.device = torch.device("cpu")):
+                 device: torch.device = torch.device("cpu"),
+                 map_type: int = 0):
         """
         Initializes the worker.
 
@@ -50,13 +51,20 @@ class RolloutWorker:
                 dc.threadpool_limits = _dummy_threadpool_limits
             except Exception:
                 pass
+        if map_type == 0:
+            cfg['env']['map']['type'] = 'corridor'
+        elif map_type == 1:
+            cfg['env']['map']['type'] = 'maze'
+        elif map_type == 2:
+            cfg['env']['map']['type'] = 'random'
+        else:
+            cfg['env']['map']['type'] = 'corridor'
         
         self.worker_id = worker_id
         self.cfg = cfg
         self.device = torch.device("cpu")
         
         # --- Environment, Model, Agent, and Buffer ---
-        # These are created once per worker.
         self.env = NavEnv(episode_index=worker_id, device=self.device, cfg=cfg['env'])
         
         pr = self.env.cfg.pooling_downsampling_rate

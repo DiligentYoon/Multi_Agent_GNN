@@ -121,10 +121,10 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
     if args.map_type is not None:
-        cfg['env']['type'] = args.map_type
+        cfg['env']['map']['type'] = args.map_type
     else:
-        cfg['env']['type'] = 'corridor'
-        raise UserWarning('[Warning] Map type is None. So, Corridor map is forced to choose.')
+        cfg['env']['map']['type'] = 'corridor'
+        print('[Warning] Map type is None. So, Corridor map is forced to choose.')
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False, max_episode_steps=steps)
     print("Environment created and reset.")
     # --- Agent & Models ---
@@ -144,7 +144,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     frames: List[np.ndarray] = []
     fig, ax1, ax2 = None, None, None
     if visualize:
-        if args.map_type is 'corridor':
+        if args.map_type == 'corridor':
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
         else:
             fig, (ax1, ax2) = plt.subplot(1, 2, figsize=(6, 15))
@@ -298,7 +298,8 @@ def viz_simulation_test(cfg: dict,
                         is_train: bool, 
                         steps: int,
                         gif_path: str = 'test_results', 
-                        agent_model = None):
+                        agent_model = None,
+                        map_type: int = 0):
     """
     Runs a simulation test, generating a GIF and plots.
         Inputs:
@@ -310,9 +311,12 @@ def viz_simulation_test(cfg: dict,
             load_file_path: Path to load checkpoint from (used if agent_model is None)
             agent_model: Pre-loaded model object (used for evaluation during training)
     """
+    cfg = copy.deepcopy(cfg)
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
+    type_list = ['corridor', 'maze', 'random']
+    cfg['env']['map']['type'] = type_list[map_type]
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train, max_episode_steps=steps)
     # --- Agent & Models ---
     pr = env.cfg.pooling_downsampling_rate
@@ -327,7 +331,7 @@ def viz_simulation_test(cfg: dict,
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
     fig, ax1, ax2 = None, None, None
-    if cfg['env']['map']['type'] is 'corridor':
+    if map_type == 0:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 15))

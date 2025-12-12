@@ -145,7 +145,7 @@ class Env():
             self.map_info = RandomObstacleMap(cfg=cfg.map)
         else:
             self.map_info = CorridorMap(cfg=cfg.map)
-            raise UserWarning('[Warning] Unvalid Map Type. So, Corridor map is forced to choose')
+            print('[Warning] Unvalid Map Type. So, Corridor map is forced to choose')
         self.total_cells = self.map_info.H * self.map_info.W
         
         # Location은 2D, Velocity는 스칼라 커맨드
