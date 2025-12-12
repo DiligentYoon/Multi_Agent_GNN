@@ -625,8 +625,8 @@ class NavEnv(Env):
                 pos_i_c = self.robot_locations[child_id]
                 vel_i_c = self.robot_velocities[child_id]
                 if pos_i_c.shape[0] > 1:
-                    # MST는 여러개의 자식노드가 있을 수 있음 -> Closest로 지정
-                    min_ids = np.argmin(np.linalg.norm(pos_i-pos_i_c, axis=1))
+                    # MST는 여러개의 자식노드가 있을 수 있음 -> Farthest로 지정
+                    min_ids = np.argmax(np.linalg.norm(pos_i-pos_i_c, axis=1))
                     pos_i_cbf = pos_i_c[min_ids]
                     vel_i_cbf = vel_i_c[min_ids]
                 else:
