@@ -2,7 +2,8 @@ import numpy as np
 import heapq
 from scipy.ndimage import binary_dilation
 
-from ..base.env.env import MapInfo
+# from ..base.env.env import MapInfo
+from ..base.env.map_generator import MapBase
 
 class AStarNode:
     """
@@ -25,7 +26,7 @@ class AStarNode:
         return hash(self.position)
 
 
-def astar_search(map_info: MapInfo, 
+def astar_search(map_info: MapBase, 
                  start_pos: np.ndarray | tuple, 
                  end_pos: np.ndarray | tuple,
                  agent_id: int,
@@ -141,7 +142,7 @@ def astar_search(map_info: MapInfo,
     return None
 
 
-def inflate_obstacles(map_info: MapInfo, inflation_radius_cells: int = 2) -> np.ndarray:
+def inflate_obstacles(map_info: MapBase, inflation_radius_cells: int = 2) -> np.ndarray:
     """
     Belief map의 장애물 팽창
     """
@@ -169,7 +170,7 @@ def inflate_obstacles(map_info: MapInfo, inflation_radius_cells: int = 2) -> np.
     return inflated_map
 
 
-def is_path_valid(map_info: MapInfo, path_cells: np.ndarray) -> bool:
+def is_path_valid(map_info: MapBase, path_cells: np.ndarray) -> bool:
     """
     주어진 경로가 현재 belief map 상에서 유효한지(장애물과 충돌하지 않는지) 확인합니다.
     """

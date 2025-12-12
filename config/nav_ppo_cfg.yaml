@@ -18,8 +18,7 @@ env:
   num_rays: 61
 
   map:
-    height: 1.0
-    width: 5.0
+    type: null
     resolution: 0.01 
     map_representation:
       free: 0
@@ -28,6 +27,20 @@ env:
       goal: 3
       start: 4
       frontier: 5
+    corridor:
+      height: 1.0
+      width: 5.0
+    maze:
+      height: 2.5
+      width: 2.5
+      corridor_width: 0.3
+    random:
+      height: 2.5
+      width: 2.5
+  
+  obs_manager:
+    height: 500
+    width: 500
 
   controller:
     max_obs: 0

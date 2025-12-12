@@ -15,7 +15,12 @@ from .nav_env_cfg import NavEnvCfg
 
 
 class NavEnv(Env):
-    def __init__(self, episode_index: int | np.ndarray, device: torch.device, cfg: dict, is_train: bool = True, max_episode_steps: int = None):
+    def __init__(self, 
+                 episode_index: int | np.ndarray, 
+                 device: torch.device, 
+                 cfg: dict, 
+                 is_train: bool = True, 
+                 max_episode_steps: int = None):
         self.cfg = NavEnvCfg(cfg)
         super().__init__(self.cfg)
 
@@ -45,10 +50,12 @@ class NavEnv(Env):
         manager_cfg = {
             "num_robots": self.num_agent,
             "unit_size_m": self.map_info.res_m,
-            "global_map_w": self.map_info.W,
-            "global_map_h": self.map_info.H,
-            "local_map_w": self.map_info.W // self.cfg.downsampling_rate,
-            "local_map_h": self.map_info.H // self.cfg.downsampling_rate,
+            "real_map_w": self.map_info.W,
+            "real_map_h": self.map_info.H,
+            "global_map_w": self.cfg.obs_manager['width'],
+            "global_map_h": self.cfg.obs_manager['height'],
+            "local_map_w": self.cfg.obs_manager['width'] // self.cfg.downsampling_rate,
+            "local_map_h": self.cfg.obs_manager['height'] // self.cfg.downsampling_rate,
             "pooling_downsampling": self.cfg.pooling_downsampling_rate
         }
         self.obs_manager = ObservationManager(cfg=manager_cfg, device=self.device)

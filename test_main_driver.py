@@ -120,6 +120,11 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
+    if args.map_type is not None:
+        cfg['env']['type'] = args.map_type
+    else:
+        cfg['env']['type'] = 'corridor'
+        raise UserWarning('[Warning] Map type is None. So, Corridor map is forced to choose.')
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False, max_episode_steps=steps)
     print("Environment created and reset.")
     # --- Agent & Models ---
@@ -139,7 +144,10 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     frames: List[np.ndarray] = []
     fig, ax1, ax2 = None, None, None
     if visualize:
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+        if args.map_type is 'corridor':
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+        else:
+            fig, (ax1, ax2) = plt.subplot(1, 2, figsize=(6, 15))
 
     path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
@@ -160,7 +168,6 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
             else:
                 pos2 = pos1
             connectivity_pairs.append((pos1, pos2))
-
 
         # Create a dictionary with visualization data
         viz_data = {
@@ -320,7 +327,10 @@ def viz_simulation_test(cfg: dict,
     # --- Visualization and Data Tracking Setup ---
     frames: List[np.ndarray] = []
     fig, ax1, ax2 = None, None, None
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+    if cfg['env']['map']['type'] is 'corridor':
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+    else:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 15))
 
     path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
@@ -453,6 +463,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+    parser.add_argument("--map_type", type=str, default=None, choices=['corridor', 'maze', 'random'], help="The type of the test map")
     parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
 
     args = parser.parse_args()
@@ -460,6 +471,6 @@ if __name__ == '__main__':
     # Run the test with visualization enabled
     run_simulation_test(args,
                         config,
-                        steps=250, 
+                        steps=10, 
                         visualize=True,
                         load_file_path=None)

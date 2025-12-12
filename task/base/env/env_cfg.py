@@ -11,6 +11,7 @@ class EnvCfg():
     max_acceleration: float
     fov: int
     sensor_range: float
+    obs_manager: dict
     controller: dict
     graph: dict
     map: dict

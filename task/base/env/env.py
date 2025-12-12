@@ -7,6 +7,8 @@ from typing import Tuple, Optional, Callable
 from .env_cfg import EnvCfg
 from task.utils import *
 
+from .map_generator import CorridorMap, RandomObstacleMap, MazeMap
+
 class MapInfo:
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -88,7 +90,7 @@ class MapInfo:
         c_lo, c_hi = sorted((c1, c2))
         self.gt[r_lo:r_hi+1, c_lo:c_hi+1] = self.map_mask["occupied"]
 
-    def add_random_rect_obstacles(self, n: int = 5, 
+    def add_random_obstacles(self, n: int = 5, 
                                   min_w_m: float = 0.15, min_h_m: float = 0.15,
                                   max_w_m: float = 0.3, max_h_m: float = 0.3,
                                   min_x_m: float = 0.25,
@@ -134,8 +136,16 @@ class Env():
         self.max_lin_vel = self.cfg.max_velocity
         self.max_ang_vel = self.cfg.max_yaw_rate
         self.max_lin_acc = self.cfg.max_acceleration
-
-        self.map_info = MapInfo(cfg=cfg.map)
+        
+        if cfg.map['type'] == 'corridor':
+            self.map_info = CorridorMap(cfg=cfg.map)
+        elif cfg.map['type'] == 'maze':
+            self.map_info = MazeMap(cfg=cfg.map)
+        elif cfg.map['type'] == 'random':
+            self.map_info = RandomObstacleMap(cfg=cfg.map)
+        else:
+            self.map_info = CorridorMap(cfg=cfg.map)
+            raise UserWarning('[Warning] Unvalid Map Type. So, Corridor map is forced to choose')
         self.total_cells = self.map_info.H * self.map_info.W
         
         # Location은 2D, Velocity는 스칼라 커맨드
@@ -159,8 +169,7 @@ class Env():
         # Load ground truth map and initial cell
         self.reached_goal = np.zeros((self.cfg.num_agent, 1), dtype=np.bool_)
         self.num_step = 0
-        self.map_info.reset_gt_and_belief()
-        self.map_info.add_random_rect_obstacles(seed=self.seed)
+        self.map_info.reset_gt_and_belief(seed=self.seed)
 
         # Randomly place N_AGENTS in start zone 
         world_x, world_y = self._set_init_state()

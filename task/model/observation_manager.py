@@ -36,6 +36,8 @@ class ObservationManager:
     def __init__(self, cfg, device):
         self.num_robots = cfg["num_robots"]
         self.unit_size_m = cfg["unit_size_m"]
+        self.real_map_w = cfg['real_map_w']
+        self.real_map_h = cfg['real_map_h']
         self.global_map_w = cfg["global_map_w"]
         self.global_map_h = cfg["global_map_h"]
         self.local_map_w = cfg["local_map_w"]
@@ -47,7 +49,7 @@ class ObservationManager:
         # obs/frontier/all pos/all trajectory/explored/explorable/history pos/history goal
         self.global_map_size = max(self.global_map_h, self.global_map_w)
         self.global_map = torch.zeros(8, self.global_map_size, self.global_map_size).float().to(device)
-        self.row_offset = self.global_map_size - self.global_map_h
+        self.row_offset = self.global_map_size - self.real_map_h
         # 1-2 cartesian global agent location, 3-6 local map boundary
         self.global_info = torch.zeros(self.num_robots, 6).long().to(device)
         

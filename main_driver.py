@@ -292,6 +292,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
+    parser.add_argument("--map_type", type=str, default=None, choices=['corridor', 'maze', 'random'], help="The type of the test map")
     parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
 
     args = parser.parse_args()
