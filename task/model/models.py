@@ -508,6 +508,22 @@ class RL_ActorCritic(nn.Module):
 
         if deterministic:
             _, action = torch.topk(logits_tensor, k=self.num_action, dim=-1)
+            valid_count = logits_tensor.size(-1)
+            k_to_select = min(self.num_action, valid_count)
+            
+            _, selected_actions = torch.topk(logits_tensor, k=k_to_select, dim=-1)
+            
+            #  목표 개수보다 적게 뽑힌경우, 부족한 만큼 가장 높은 타겟으로 채움
+            if k_to_select < self.num_action:
+                num_missing = self.num_action - k_to_select
+                
+                best_action = selected_actions[:, 0:1]
+                
+                padding = best_action.expand(-1, num_missing)
+                
+                action = torch.cat([selected_actions, padding], dim=-1)
+            else:
+                action = selected_actions
         else:
             # sample_shape prepends to batch_shape, so result is (num_action, batch_size)
             action_transposed = dist.sample(sample_shape=torch.Size([self.num_action]))

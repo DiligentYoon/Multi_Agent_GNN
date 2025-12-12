@@ -218,7 +218,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
                                                             rec_states,
                                                             mask,
                                                             info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
-                                                            deterministic=False)
+                                                            deterministic=True)
 
         # 시점 t+1에서의 observation, reward, done 추출
         next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
@@ -431,7 +431,7 @@ def viz_simulation_test(cfg: dict,
                 min_agent_dist = 0
             
             agent_cbf_info = {"obs_avoid": min_dist - env.cfg.d_safe**2,
-                                "agent_conn": env.neighbor_radius**2 - min_agent_dist}
+                              "agent_conn": env.neighbor_radius**2 - min_agent_dist}
             cbf_history[j].append(agent_cbf_info)
 
         # 데이터 집계

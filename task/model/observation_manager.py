@@ -190,7 +190,7 @@ class ObservationManager:
         
         """
         global_input = nn.MaxPool2d(self.pooling_downsampling)(self.global_map)
-         # frontier 중, obstacle과 겹치는 부분은 삭제
+        # frontier 중, obstacle과 겹치는 부분은 삭제
         global_input[1, :, :][global_input[0, :, :].bool()] = 0
         # frontier selection의 난이도를 낮추기 위한 clustering 수행
         global_input[1, :, :] = self.clustering_frontier_map(global_input[1, :, :].cpu().numpy()).to(self.device)
@@ -198,8 +198,6 @@ class ObservationManager:
         global_input[7, :, :] = g_history
         dist_input = torch.zeros((self.num_robots, self.global_map_size, self.global_map_size))
         obstacle = self.global_map[0, :, :].bool()
-
-        
 
         rows = obstacle.any(1).cpu().numpy()
         cols = obstacle.any(0).cpu().numpy()
@@ -308,7 +306,7 @@ class ObservationManager:
                 
                 direction = pca.components_[0]
                 center = points.mean(axis=0) 
-                std_dev = np.sqrt(pca.explained_variance_[0]) # 분산
+                std_dev = np.sqrt(pca.explained_variance_[0])
                 
                 # 주축의 양 끝점으로 K-means의 초기 중심점 설정
                 init_centers = np.array([

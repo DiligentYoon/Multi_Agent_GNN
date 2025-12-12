@@ -278,6 +278,9 @@ class NavEnv(Env):
         is_conn = np.array(self.cbf_infos["nominal"]["on_conn"])
         is_valid_path = self.is_valid_path
 
+        # Frontier Detection 체크
+        is_detect = torch.nonzero(self.obs_manager.global_map[1, :, :])
+
         # 목표 도달 유무 체크
         reached_goal = (self.map_info.gt[rows, cols] == self.map_info.map_mask["goal"]).reshape(-1, 1)
 
