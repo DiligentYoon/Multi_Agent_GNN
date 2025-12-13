@@ -134,13 +134,15 @@ class NavEnv(Env):
             Inputs:
                 actions : 에이전트 별 Target Point
         """
+        history_action_map = np.zeros((self.obs_manager.global_map_size // self.cfg.pooling_downsampling_rate, 
+                                       self.obs_manager.global_map_size // self.cfg.pooling_downsampling_rate))
         self.actions = actions
         cpu_action = actions.cpu().numpy().reshape(-1)
         frontier_idx = torch.nonzero(self.obs_buf[1, :, :]).cpu().numpy() # [F, 2]
         for i in range(self.num_agent):
             # Down Sampled 차원에서 History Map 업데이트
             downsampled_id = frontier_idx[cpu_action[i], :]
-            self.history_action_map[downsampled_id[0], downsampled_id[1]] = 1
+            history_action_map[downsampled_id[0], downsampled_id[1]] = 1
 
             # 실제 Map Scale로 Up-Scaling 및 유효성 검사
             ds = self.cfg.pooling_downsampling_rate
@@ -177,7 +179,7 @@ class NavEnv(Env):
             self.assigned_rc[i] = final_target_rc
         
         self.assigned_rc = np.array(assign_targets_hungarian(self.map_info, self.robot_locations, self.assigned_rc, self.num_agent))
-
+        self.history_action_map = history_action_map
 
     def _apply_actions(self):
         """
@@ -243,11 +245,11 @@ class NavEnv(Env):
         # Success Event Reward
         success_reward = coeff["success"] * np.astype(self.is_success, np.float32)
         # Failure Penalty
-        failure_penalty = -0.8 * coeff["success"] * np.astype(self.is_failure, np.float32)
+        failure_penalty = -coeff["success"] * np.astype(self.is_failure, np.float32)
         # # Connectivity Penalty
         # connectivity_penalty = -coeff["connectivity"] * int(any(self.cbf_infos["nominal"]["on_conn"]))
         # Action Penalty
-        action_penalty = - coeff["action"] * self.map_info.res_m * np.sum(np.linalg.norm(self.prev_assigned_rc - self.assigned_rc, axis=1))
+        action_penalty = - coeff["action"] * self.map_info.res_m * np.max(np.linalg.norm(self.prev_assigned_rc - self.assigned_rc, axis=1))
         self.prev_assigned_rc = copy.deepcopy(self.assigned_rc)
 
         return explored_reward + action_penalty + success_reward + failure_penalty

@@ -99,7 +99,7 @@ agent:
 model:
   # Model Configuration
   model_type: gnn
-  num_gnn_layer: 1
+  num_gnn_layer: 2
   use_history: true
   ablation: false
 
