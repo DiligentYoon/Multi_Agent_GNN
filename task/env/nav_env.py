@@ -321,7 +321,10 @@ class NavEnv(Env):
                                  ~is_valid_path | \
                                  ~is_detect | \
                                   is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_detect)
-        # self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        self.is_failure = np.any(self.is_collided_obstacle | \
+                                 self.is_collided_drone | \
+                                 ~is_valid_path | \
+                                 ~is_detect) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_detect)
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료
         terminated = copy.deepcopy(self.is_success | self.is_failure)
