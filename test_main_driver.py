@@ -343,7 +343,7 @@ def viz_simulation_test(cfg: dict,
     if map_type == 0:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
     else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 15))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
 
     path_history  = [[] for _ in range(num_agents)]
     cbf_history   = [[] for _ in range(num_agents)]
