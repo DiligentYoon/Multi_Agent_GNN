@@ -285,7 +285,7 @@ class NavEnv(Env):
         is_valid_path = self.is_valid_path
 
         # Frontier Detection 체크
-        is_detect = torch.nonzero(self.obs_manager.global_map[1, :, :])
+        is_detect = torch.any(self.obs_manager.frontier_info).cpu().numpy()
 
         # 목표 도달 유무 체크
         reached_goal = (self.map_info.gt[rows, cols] == self.map_info.map_mask["goal"]).reshape(-1, 1)
@@ -316,7 +316,11 @@ class NavEnv(Env):
         
         # 성공 & 실패 유무
         self.is_success = np.any(reached_goal)
-        self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path | is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
+        self.is_failure = np.any(self.is_collided_obstacle | \
+                                 self.is_collided_drone | \
+                                 ~is_valid_path | \
+                                 ~is_detect | \
+                                  is_conn) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_detect)
         # self.is_failure = np.any(self.is_collided_obstacle | self.is_collided_drone | ~is_valid_path) if self.is_train else np.any(self.is_collided_obstacle | self.is_collided_drone)
 
         # 개별 로봇이 충돌하거나 목표에 도달하면 종료

@@ -341,7 +341,6 @@ class AttentionalGNN(nn.Module):
         # fidx: n_agent x n_frontier x 2
         # lmb: n_agent x n_frontier x 4
         # unreachable: n_agent x n_frontier
-        invalid = ((fidx < lmb[:, :, [0,2]]) | (fidx >= lmb[:, :, [1,3]])).any(2)
         # assert (~invalid).any(1).all()
         if self.ablation == 1:
             scores = self.score_layer(torch.cat((
@@ -353,10 +352,8 @@ class AttentionalGNN(nn.Module):
         else:
             scores = score1
         scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
-        score_min = scores.min() - scores.max()
-        scores = scores + (score_min - 40) * invalid.float() + (score_min - 20) * unreachable.float()
 
-        return scores * 15
+        return scores
 
 
 
@@ -439,7 +436,7 @@ class GNN(nn.Module):
         self.train()
 
     def forward(self, inputs, rnn_hxs, masks, extras):
-        value = self.critic(inputs[:, :6, :, :]).squeeze(-1) - 1.5
+        value = self.critic(inputs[:, :6, :, :]).squeeze(-1)
         actor_features = self.actor(inputs[:, :6, :, :], inputs[:, 8:, :, :], inputs[:, 6, :, :], inputs[:, 7, :, :], extras)
         return value, actor_features, rnn_hxs
 
@@ -516,36 +513,8 @@ class RL_CoMapping_Policy(nn.Module):
 
         return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
 
-    def load(self, path, device):
-        # 파라미터 로드 전 Optimizer 초기화 (LR 초기화 효과)
-        # actor_params = list(self.network.actor.parameters())
-        # critic_params = list(self.network.critic.parameters()) + list(self.network.map_encoder.parameters())
-        
-        # self.actor_optimizer = optim.Adam(actor_params, lr=1e-3)
-        # self.critic_optimizer = optim.Adam(critic_params, lr=1e-3)
-
-        state_dict = torch.load(path, map_location=device)
-        self.network.load_state_dict(state_dict['network'])
-        self.optimizer.load_state_dict(state_dict['optimizer'])
-        # self.actor_optimizer.load_state_dict(state_dict['actor_optimizer'])
-        # self.critic_optimizer.load_state_dict(state_dict['critic_optimizer'])
-        del state_dict
-
     def load_critic(self, path, device):
         state_dict = torch.load(path, map_location=device)['network']
         self.network.critic.load_state_dict({k.replace('critic.', ''):v for k,v in state_dict.items() if 'critic' in k})
         # self.network.actor.load_state_dict({k.replace('actor.', ''):v for k,v in state_dict.items() if 'actor' in k})
         del state_dict
-
-    def save(self, path):
-        # state = {
-        #     'network': self.network.state_dict(),
-        #     'actor_optimizer': self.actor_optimizer.state_dict(),
-        #     'critic_optimizer': self.critic_optimizer.state_dict(),
-        # }
-        state = {
-            'network': self.network.state_dict(),
-            'optimizer': self.optimizer.state_dict(),
-        }
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        torch.save(state, path)

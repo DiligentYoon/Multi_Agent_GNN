@@ -123,11 +123,6 @@ class Encoder(nn.Module):
 
             if frontier.size(0) > 0:
                 dist_structured = dist[b, :, :, :][(inputs[b, :, :] > 0).unsqueeze(0).repeat(dist.size(1), 1, 1)].view(dist.size(1), -1)
-
-                perm = torch.randperm(frontier.size(0), device=device)
-                frontier = frontier[perm]
-                dist_structured = dist_structured[:, perm]
-                
                 dist_feat = torch.log1p(dist_structured.reshape(1, 1, -1))
             else:
                 dist_feat = torch.empty(1, 1, 0, device=device)
@@ -319,7 +314,6 @@ class AttentionalGNN(nn.Module):
         # fidx: n_agent x n_frontier x 2
         # lmb: n_agent x n_frontier x 4
         # unreachable: n_agent x n_frontier
-        invalid = ((fidx < lmb[:, :, [0,2]]) | (fidx >= lmb[:, :, [1,3]])).any(2)
         # assert (~invalid).any(1).all()
         if self.ablation == 1:
             scores = self.score_layer(torch.cat((

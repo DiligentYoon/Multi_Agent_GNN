@@ -77,8 +77,8 @@ def main(cfg: dict, args: argparse.Namespace):
         learner_model = RL_ActorCritic(observation_space.shape, action_space,
                                         model_type=model_cfg['model_type'],
                                         base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
-                                                        'use_history': model_cfg['use_history'],
-                                                        'ablation': model_cfg['ablation']},
+                                                     'use_history': model_cfg['use_history'],
+                                                     'ablation': model_cfg['ablation']},
                                         lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
                                         eps=model_cfg['eps']).to(device)
     elif args.version == 2:
@@ -86,10 +86,19 @@ def main(cfg: dict, args: argparse.Namespace):
         learner_model = RL_Policy(observation_space.shape, action_space,
                                     model_type=model_cfg['model_type'],
                                     base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
-                                                    'use_history': model_cfg['use_history'],
-                                                    'ablation': model_cfg['ablation']},
-                                                    lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
-                                                    eps=model_cfg['eps']).to(device)
+                                                 'use_history': model_cfg['use_history'],
+                                                 'ablation': model_cfg['ablation']},
+                                    lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                    eps=model_cfg['eps']).to(device)
+    else:
+        learner_model = RL_CoMapping_Policy(observation_space.shape, action_space,
+                                            model_type=model_cfg['model_type'],
+                                            base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                                         'use_history': model_cfg['use_history'],
+                                                         'ablation': model_cfg['ablation']},
+                                            lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                            eps=model_cfg['eps']).to(device)
+
     num_params = sum(p.numel() for p in learner_model.parameters() if p.requires_grad)
     learner_agent = PPOAgent(learner_model, device, cfg['agent'])
 

@@ -20,6 +20,7 @@ from task.agent.sac import SACAgent
 from task.agent.ppo import Agent, PPOAgent
 from task.model.models import RL_ActorCritic
 from task.model.models_ver_2 import RL_Policy
+from task.model.models_commaping import RL_CoMapping_Policy
 from task.buffer.rolloutbuffer import RolloutBuffer, CoMappingRolloutBuffer
 
 from visualization import draw_frame, plot_cbf_values
@@ -61,6 +62,14 @@ def create_model(cfg: dict, observation_space: gym.Space, action_space: gym.Spac
                                             'ablation': model_cfg['ablation']},
                                  lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
                                  eps=model_cfg['eps']).to(device)
+    else:
+        actor_critic = RL_CoMapping_Policy(observation_space.shape, action_space,
+                                            model_type=model_cfg['model_type'],
+                                            base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                                         'use_history': model_cfg['use_history'],
+                                                         'ablation': model_cfg['ablation']},
+                                            lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                            eps=model_cfg['eps']).to(device)
     return actor_critic
 
 
@@ -468,7 +477,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
     parser.add_argument("--map_type", type=str, default=None, choices=['corridor', 'maze', 'random'], help="The type of the test map")
-    parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
+    parser.add_argument("--version", type=int, default=3, help="Verison of the model.")
 
     args = parser.parse_args()
     

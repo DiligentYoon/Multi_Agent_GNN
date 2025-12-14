@@ -111,7 +111,13 @@ class RolloutWorker:
                                 lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
                                 eps=model_cfg['eps']).to(self.device)
         else:
-            raise RuntimeError("Invalid model version.")
+            return RL_CoMapping_Policy(self.observation_space.shape, self.action_space,
+                                       model_type=model_cfg['model_type'],
+                                       base_kwargs={'num_gnn_layer': model_cfg['num_gnn_layer'],
+                                                    'use_history': model_cfg['use_history'],
+                                                    'ablation': model_cfg['ablation']},
+                                       lr=(model_cfg['actor_lr'], model_cfg['critic_lr']),
+                                       eps=model_cfg['eps']).to(self.device)
 
 
     def sample(self) -> tuple[CoMappingRolloutBuffer, dict[str, float]]:

@@ -1,6 +1,7 @@
 import os
 os.environ["OMP_NUM_THREADS"] = "1"
 import numpy as np
+import copy
 import torch
 import torch.nn as nn
 
@@ -51,6 +52,8 @@ class ObservationManager:
         self.global_map = torch.zeros(8, self.global_map_size, self.global_map_size).float().to(device)
         self.row_offset = self.global_map_size - self.real_map_h
         # 1-2 cartesian global agent location, 3-6 local map boundary
+        self.frontier_info = torch.zeros(self.global_map_size // self.pooling_downsampling, 
+                                         self.global_map_size // self.pooling_downsampling).to(device)
         self.global_info = torch.zeros(self.num_robots, 6).long().to(device)
         
 
@@ -194,6 +197,7 @@ class ObservationManager:
         global_input[1, :, :][global_input[0, :, :].bool()] = 0
         # frontier selection의 난이도를 낮추기 위한 clustering 수행
         global_input[1, :, :] = self.clustering_frontier_map(global_input[1, :, :].cpu().numpy()).to(self.device)
+        self.frontier_info = copy.deepcopy(global_input[1, :, :])
         global_input[6, :, :] -= global_input[2, :, :]
         global_input[7, :, :] = g_history
         dist_input = torch.zeros((self.num_robots, self.global_map_size, self.global_map_size))
