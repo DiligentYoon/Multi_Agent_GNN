@@ -330,12 +330,11 @@ class AttentionalGNN(nn.Module):
             print(scores)
             raise RuntimeError
 
+        scores = scores.masked_fill(unreachable.unsqueeze(0), -1e9)
         # scores = scores.log_softmax(dim=-2).view(unreachable.shape)
-        # scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
-        scores = scores.mean(dim=1).view(-1)
-        # Apply unreachable mask
-        unreachable_frontiers = unreachable.any(dim=0)
-        scores.masked_fill_(unreachable_frontiers, -1e9)
+        scores = log_optimal_transport(scores.log_softmax(dim=-2), self.bin_score, iters=5)[:, :-1, :-1].view(unreachable.shape)
+
+        # agent-wise unreachable mask (Na, Nf)
 
         return scores
 
@@ -473,59 +472,56 @@ class RL_ActorCritic(nn.Module):
         
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
         
-        # Pad the list of logit tensors
-        if not actor_features or all(f.numel() == 0 for f in actor_features):
+        Na = self.num_action
+
+        if (not actor_features) or all(f.numel() == 0 for f in actor_features):
             batch_size = inputs.size(0)
             action = torch.full((batch_size, self.num_action), -1, dtype=torch.long, device=inputs.device)
             action_log_probs = torch.zeros(batch_size, device=inputs.device)
-            return value, action, action_log_probs, rnn_hxs, actor_features
-
-        max_len = max((f.shape[0] for f in actor_features if f.numel() > 0), default=0)
+            return value, action, action_log_probs, rnn_hxs, None
+        
+        max_len = max((f.shape[1] for f in actor_features if f.numel() > 0), default=0)
         if max_len == 0:
             batch_size = inputs.size(0)
             action = torch.full((batch_size, self.num_action), -1, dtype=torch.long, device=inputs.device)
             action_log_probs = torch.zeros(batch_size, device=inputs.device)
-            return value, action, action_log_probs, rnn_hxs, actor_features
+            return value, action, action_log_probs, rnn_hxs, None
 
-        padded_logits = []
+        padded = []
         for logits in actor_features:
-            if logits.numel() > 0:
-                pad_size = max_len - logits.shape[0]
-                padded = F.pad(logits, (0, pad_size), 'constant', -1e9)
-                padded_logits.append(padded)
-            else:
-                padded_logits.append(torch.full((max_len,), -1e9, device=inputs.device, dtype=torch.float))
-        
-        logits_tensor = torch.stack(padded_logits, dim=0)
-        
-        dist = Categorical(logits=logits_tensor)
+            # logits: (Na, Nf_b)
+            if logits.numel() == 0:
+                padded.append(torch.full((Na, max_len), -1e9, device=inputs.device, dtype=torch.float))
+                continue
+
+            # 안전 체크: Na 불일치 방지
+            if logits.shape[0] != Na:
+                raise RuntimeError(f"Na mismatch: logits has {logits.shape[0]}, expected {Na}")
+
+            pad_size = max_len - logits.shape[1]
+            padded_logits = F.pad(logits, (0, pad_size), 'constant', -1e9)  # (Na, max_len)
+            padded.append(padded_logits)
+
+        logits_tensor = torch.stack(padded, dim=0)  # (B, Na, max_len)
+
+        # 에이전트별 분포 생성
+        dist = Categorical(logits=logits_tensor)    # batch_shape=(B, Na), event=categories(max_len)
+
+        # 유효 후보 여부(각 배치-에이전트별)
+        valid_any = (logits_tensor > -1e8).any(dim=-1)  # (B, Na)
 
         if deterministic:
-            valid_count = logits_tensor.size(-1)
-            k_to_select = min(self.num_action, valid_count)
-            
-            _, selected_actions = torch.topk(logits_tensor, k=k_to_select, dim=-1)
-            
-            #  목표 개수보다 적게 뽑힌경우, 부족한 만큼 가장 높은 타겟으로 채움
-            if k_to_select < self.num_action:
-                num_missing = self.num_action - k_to_select
-                
-                best_action = selected_actions[:, 0:1]
-                
-                padding = best_action.expand(-1, num_missing)
-                
-                action = torch.cat([selected_actions, padding], dim=-1)
-            else:
-                action = selected_actions
+            action = logits_tensor.argmax(dim=-1)        # (B, Na)
         else:
-            # sample_shape prepends to batch_shape, so result is (num_action, batch_size)
-            action_transposed = dist.sample(sample_shape=torch.Size([self.num_action]))
-            action = action_transposed.transpose(0, 1)
+            action = dist.sample()                       # (B, Na)
 
-        # Calculate log_probs for the chosen action
-        action_transposed_for_log_prob = action.transpose(0, 1)
-        log_probs_transposed = dist.log_prob(action_transposed_for_log_prob)
-        action_log_probs = log_probs_transposed.sum(dim=0)
+        # 유효 후보가 없는 경우 -1 처리
+        action = torch.where(valid_any, action, torch.full_like(action, -1))
+
+        # log_prob 계산 (유효한 경우만 합산)
+        logp = dist.log_prob(action.clamp(min=0))        # (B, Na)
+        logp = torch.where(valid_any, logp, torch.zeros_like(logp))
+        action_log_probs = logp.sum(dim=-1)              # (B,)
 
         return value, action, action_log_probs, rnn_hxs, dist.probs
 
@@ -538,45 +534,49 @@ class RL_ActorCritic(nn.Module):
 
         value, actor_features, rnn_hxs = self(inputs, rnn_hxs, masks, extras)
         
-        # Pad the list of logit tensors
-        if not actor_features or all(f.numel() == 0 for f in actor_features):
-            batch_size = inputs.size(0)
-            action_log_probs = torch.zeros(batch_size, device=inputs.device)
-            dist_entropy = torch.zeros(1, device=inputs.device).mean()
-            return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
+        Na = self.num_action
 
-        max_len = max((f.shape[0] for f in actor_features if f.numel() > 0), default=0)
+        if (not actor_features) or all(f.numel() == 0 for f in actor_features):
+            batch_size = inputs.size(0)
+            action = torch.full((batch_size, self.num_action), -1, dtype=torch.long, device=inputs.device)
+            action_log_probs = torch.zeros(batch_size, device=inputs.device)
+            return value, action, action_log_probs, rnn_hxs, None
+        
+        max_len = max((f.shape[1] for f in actor_features if f.numel() > 0), default=0)
         if max_len == 0:
             batch_size = inputs.size(0)
+            action = torch.full((batch_size, self.num_action), -1, dtype=torch.long, device=inputs.device)
             action_log_probs = torch.zeros(batch_size, device=inputs.device)
-            dist_entropy = torch.zeros(1, device=inputs.device).mean()
-            return value, action_log_probs, dist_entropy, rnn_hxs, actor_features
+            return value, action, action_log_probs, rnn_hxs, None
 
-        padded_logits = []
+        padded = []
         for logits in actor_features:
-            if logits.numel() > 0:
-                pad_size = max_len - logits.shape[0]
-                padded = F.pad(logits, (0, pad_size), 'constant', -1e9)
-                padded_logits.append(padded)
-            else:
-                padded_logits.append(torch.full((max_len,), -1e9, device=inputs.device, dtype=torch.float))
+            # logits: (Na, Nf_b)
+            if logits.numel() == 0:
+                padded.append(torch.full((Na, max_len), -1e9, device=inputs.device, dtype=torch.float))
+                continue
 
-        logits_tensor = torch.stack(padded_logits, dim=0)
-        
+            if logits.shape[0] != Na:
+                raise RuntimeError(f"Na mismatch: logits has {logits.shape[0]}, expected {Na}")
+
+            pad_size = max_len - logits.shape[1]
+            padded_logits = F.pad(logits, (0, pad_size), 'constant', -1e9)  # (Na, max_len)
+            padded.append(padded_logits)
+
+        logits_tensor = torch.stack(padded, dim=0)  # (B, Na, max_len)
+
         dist = Categorical(logits=logits_tensor)
 
-        # Mask out invalid actions (-1) before calculating log_prob
-        action_mask = action >= 0
-        action_transposed = action.transpose(0, 1)
+        valid_any = (logits_tensor > -1e8).any(dim=-1)   # (B, Na)
+        valid_action = (action >= 0) & valid_any         # (B, Na)
 
-        # Use clamp to avoid error on -1 index
-        log_probs_transposed = dist.log_prob(action_transposed.clamp(min=0))
+        logp = dist.log_prob(action.clamp(min=0))        # (B, Na)
+        logp = torch.where(valid_action, logp, torch.zeros_like(logp))
+        action_log_probs = logp.sum(dim=-1)              # (B,)
 
-        # Zero out log_probs for padded actions and sum
-        log_probs_transposed = log_probs_transposed * action_mask.transpose(0, 1).float()
-        action_log_probs = log_probs_transposed.sum(dim=0)
-
-        dist_entropy = dist.entropy().mean()
+        # entropy도 에이전트별 평균을 낸 뒤 batch 평균
+        ent = dist.entropy()                              
+        dist_entropy = ent.mean()
 
         return value, action_log_probs, dist_entropy, rnn_hxs, dist.probs
 
