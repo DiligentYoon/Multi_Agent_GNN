@@ -217,11 +217,12 @@ class ObservationManager:
             distance_field(dist_input[i, :, :], obstacle, optimized=(row, col))
 
         dist_input = dist_input.to(self.device)
-        dist_input[self.global_map[1:2, :, :].repeat(self.num_robots, 1, 1) == 0] = 4
-        for i in range(self.num_robots):
-            agent_cell_pos = self.world_to_grid_np(self.global_pose[i, :2]).reshape(-1)
-            dist_input[i, agent_cell_pos[1], agent_cell_pos[0]] = 4
         dist_input = -nn.MaxPool2d(self.pooling_downsampling)(-dist_input)
+        # Frontier가 아닌 곳은 전부 4로 재마킹
+        dist_input[global_input[1, :, :].repeat(self.num_robots, 1, 1) == 0] = 4
+        # Robot은 전부 4로 재마킹
+        dist_input[global_input[2, :, :].repeat(self.num_robots, 1, 1) == 1] = 4
+        # 최대값 클램핑
         dist_input[dist_input > 4] = 4
         global_input = torch.cat((global_input, dist_input), dim=0) # dim: [8 + Num_Agent, H, W]
 
