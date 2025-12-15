@@ -134,6 +134,9 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     else:
         cfg['env']['map']['type'] = 'corridor'
         print('[Warning] Map type is None. So, Corridor map is forced to choose.')
+    if args.seed != -1:
+        cfg['env']['seed'] = args.seed
+
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=False, max_episode_steps=steps)
     print("Environment created and reset.")
     # --- Agent & Models ---
@@ -199,7 +202,7 @@ def run_simulation_test(args: argparse.Namespace, cfg: dict, steps: int, out_dir
     callback_fn = render_callback if visualize else None
 
     # ================ Simulation Start ====================
-    obs, _, info = env.reset(episode_index=25)
+    obs, _, info = env.reset(episode_index=args.seed)
 
     # 초기 액션 세팅 + 스텝
     l = buffer.mini_step * buffer.mini_step_size
@@ -324,7 +327,7 @@ def viz_simulation_test(cfg: dict,
     # --- Device ---
     device = torch.device(cfg['env']['device'])
     # --- Environment ---
-    type_list = ['corridor', 'maze', 'random']
+    type_list = ['corridor', 'maze', 'random', 'single_maze']
     cfg['env']['map']['type'] = type_list[map_type]
     env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train, max_episode_steps=steps)
     # --- Agent & Models ---
@@ -476,14 +479,15 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Play a checkpoint of an RL agent from skrl.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
-    parser.add_argument("--map_type", type=str, default=None, choices=['corridor', 'maze', 'random'], help="The type of the test map")
+    parser.add_argument("--map_type", type=str, default=None, choices=['corridor', 'maze', 'random', 'single_maze'], help="The type of the test map")
     parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
+    parser.add_argument("--seed", type=int, default=-1, help="Seed number for randomization")
 
     args = parser.parse_args()
     
     # Run the test with visualization enabled
     run_simulation_test(args,
                         config,
-                        steps=250, 
+                        steps=100, 
                         visualize=True,
                         load_file_path=None)

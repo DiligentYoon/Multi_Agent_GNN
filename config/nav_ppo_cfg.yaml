@@ -9,7 +9,7 @@ env:
   physics_dt: 0.1
   device: "cuda:0"
   num_agent: 3
-  num_map_type: 3
+  num_map_type: 4
   max_velocity: 0.3
   max_yaw_rate: 1.0 # radians
   max_acceleration: 0.1
@@ -38,6 +38,10 @@ env:
     random:
       height: 2.5
       width: 2.5
+    single_maze:
+      height: 2.5
+      width: 2.5
+      corridor_width: 0.4
   
   obs_manager:
     height: 500

@@ -95,6 +95,7 @@ class MapBase:
                              min_m: float = 0.15, 
                              max_m: float = 0.3,
                              min_x_m: float = 0.25,
+                             min_dist: float = 0.1,
                              seed: Optional[int] = None):
         """Place N rectangular obstacles of random size with min/max dimensions."""
         rng = np.random.default_rng(seed)
@@ -107,9 +108,12 @@ class MapBase:
             x = rng.uniform(min_x_m, max(min_x_m, self.meters_w - w))
             y = rng.uniform(0.0, max(min_x_m, self.meters_h - h))
 
-            if self.check_validity(x, y, w, h):
+            if self.check_validity(x, y, w, h, min_dist=min_dist):
                 self.add_rect_obstacle(x, y, x+w, y+h)
                 count += 1
+            
+            if attempts == max_attempts:
+                print("Max Attempts")
 
     def check_validity(self, x, y, w, h, min_dist: float = 0.1):
             """
@@ -158,7 +162,7 @@ class CorridorMap(MapBase):
         self.initialization()
         self.add_border_walls()
         self.add_start_and_goal_zones()
-        self.add_random_obstacles(n=5, min_m=0.15, max_m=0.3, seed=seed)
+        self.add_random_obstacles(n=10, min_m=0.15, max_m=0.3, seed=seed)
 
 
 class MazeMap(MapBase):
@@ -261,6 +265,7 @@ class MazeMap(MapBase):
         self._generate_maze_grid(seed)
         self.add_border_walls()
         self.add_start_and_goal_zones()
+        self.add_random_obstacles(n=10, min_m=0.05, max_m=0.1, seed=seed)
 
 
 class RandomObstacleMap(MapBase):
@@ -289,6 +294,161 @@ class RandomObstacleMap(MapBase):
         self.add_random_obstacles(n=15, min_m=0.2, max_m=0.3, seed=seed)
 
 
+class SingleMazeMap(MapBase):
+    def __init__(self, cfg: dict):
+        super().__init__(cfg, cfg["single_maze"])
+        
+        self.corridor_width = cfg['single_maze'].get('corridor_width', 0.3)
+        
+        self.maze_rows = int(self.meters_h / self.corridor_width)
+        self.maze_cols = int(self.meters_w / self.corridor_width)
+
+    def _generate_path(self, seed, max_steps=None):
+        """
+        단일 경로(Non-Branching) 보장: Loop-Erased Random Walk (LERW)
+        """
+        rng = np.random.default_rng(seed)
+
+        rows, cols = self.maze_rows, self.maze_cols
+        start = (rows - 1, 0)
+        goal  = (0, cols - 1)
+
+        # 안전장치(필수는 아니지만 권장): 너무 오래 걸리면 리스타트
+        if max_steps is None:
+            max_steps = rows * cols * 200  # 경험적 상수 (원하면 조절)
+
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+        def neighbors(cell):
+            r, c = cell
+            for dr, dc in directions:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < rows and 0 <= nc < cols:
+                    yield (nr, nc)
+
+        # LERW를 “성공할 때까지” 시도 (finite grid에서 goal hit는 확률 1이지만, 시간 제한을 둠)
+        for attempt in range(1000):
+            path = [start]
+            index = {start: 0}  # cell -> position in path
+            cur = start
+            steps = 0
+
+            while cur != goal and steps < max_steps:
+                nbs = list(neighbors(cur))
+                nxt = nbs[rng.integers(len(nbs))]
+
+                if nxt in index:
+                    # loop 발생: path를 nxt가 있던 지점까지 잘라냄
+                    cut = index[nxt]
+                    # 잘려나가는 구간의 index 엔트리 제거
+                    for cell in path[cut+1:]:
+                        index.pop(cell, None)
+                    path = path[:cut+1]
+                else:
+                    path.append(nxt)
+                    index[nxt] = len(path) - 1
+
+                cur = path[-1]
+                steps += 1
+
+            if cur == goal:
+                logic_map = np.zeros((rows, cols), dtype=int)
+                for r, c in path:
+                    logic_map[r, c] = 1
+                return logic_map
+
+        # 여기까지 오면(매우 드묾) 실패: 최소 안전하게 “직선+직선” 경로라도 반환
+        logic_map = np.zeros((rows, cols), dtype=int)
+        r, c = start
+        logic_map[r, c] = 1
+        # 위로 이동
+        while r > goal[0]:
+            r -= 1
+            logic_map[r, c] = 1
+        # 오른쪽 이동
+        while c < goal[1]:
+            c += 1
+            logic_map[r, c] = 1
+        return logic_map
+
+    def _render_logic_to_gt(self, logic_map):
+        """
+        맵을 고해상도 GT 맵에 렌더링
+        """
+        self.gt.fill(self.map_mask["occupied"])
+
+        eps = 1e-6
+        H, W = self.gt.shape
+
+        for r in range(self.maze_rows):
+            for c in range(self.maze_cols):
+                if logic_map[r, c] != 1:
+                    continue
+
+                # logic row(top-down) -> world y(bottom-up)
+                r_inv = (self.maze_rows - 1) - r
+
+                xmin = c * self.corridor_width
+                xmax = (c + 1) * self.corridor_width
+                ymin = r_inv * self.corridor_width
+                ymax = (r_inv + 1) * self.corridor_width
+
+                # 경계 좌표는 +/- eps로 내부를 찍어서 라운딩/경계 포함 문제를 피함
+                r1, c1 = self.world_to_grid(xmin + eps, ymin + eps)
+                r2, c2 = self.world_to_grid(xmax - eps, ymax - eps)
+
+                r_lo, r_hi = sorted((r1, r2))
+                c_lo, c_hi = sorted((c1, c2))
+
+                # clamp
+                r_lo = max(0, min(H - 1, r_lo))
+                r_hi = max(0, min(H - 1, r_hi))
+                c_lo = max(0, min(W - 1, c_lo))
+                c_hi = max(0, min(W - 1, c_hi))
+
+                # 상한 포함(+1)
+                self.gt[r_lo:r_hi + 1, c_lo:c_hi + 1] = self.map_mask["free"]
+
+    def add_start_and_goal_zones(self, thickness: float = 0.05):
+            """Start/Goal 마킹 (MazeMap의 동기화된 로직 사용)"""
+            
+            r_start = self.maze_rows - 1
+            r_start_inv = (self.maze_rows - 1) - r_start # r_inv=0
+            
+            s_ymin = r_start_inv * self.corridor_width
+            s_xmin = 0.0
+            
+            sy_min_real = s_ymin + thickness
+            sx_min_real = s_xmin + thickness
+            sy_max_real = s_ymin + self.corridor_width
+            sx_max_real = s_xmin + self.corridor_width
+
+            rs1, cs1 = self.world_to_grid(sx_min_real, sy_min_real)
+            rs2, cs2 = self.world_to_grid(sx_max_real, sy_max_real)
+            
+            self.gt[min(rs1, rs2):max(rs1, rs2)+1, min(cs1, cs2):max(cs1, cs2)+1] = self.map_mask["start"]
+
+            r_goal = 0
+            r_goal_inv = (self.maze_rows - 1) - r_goal
+            
+            g_xmin_real = (self.maze_cols - 1) * self.corridor_width
+            g_ymin_real = r_goal_inv * self.corridor_width 
+            
+            g_xmax_real = self.meters_w - thickness
+            g_ymax_real = self.meters_h - thickness
+
+            rg1, cg1 = self.world_to_grid(g_xmin_real, g_ymin_real)
+            rg2, cg2 = self.world_to_grid(g_xmax_real, g_ymax_real)
+            
+            self.gt[min(rg1, rg2):max(rg1, rg2), min(cg1, cg2):max(cg1, cg2)] = self.map_mask["goal"]
+
+    def reset_gt_and_belief(self, seed=None):
+        self.initialization()
+        logic_map = self._generate_path(seed)
+        self._render_logic_to_gt(logic_map)
+        self.add_border_walls()
+        self.add_start_and_goal_zones()
+        self.add_random_obstacles(n=10, min_m=0.03, max_m=0.1, seed=seed, max_attempts=10000, min_dist=0.1)
 
 
 def visualize_maps(maps_list, save_path="generated_maps.png"):
@@ -331,10 +491,8 @@ def visualize_maps(maps_list, save_path="generated_maps.png"):
     print(f"이미지가 저장되었습니다: {save_path}")
 
 def main():
-    # 1. 공통 설정 및 시드 설정
     seed = random.randint(0, 100)
     
-    # 2. 맵 객체 생성
     # (A) Corridor Map (1m x 5m)
     cfg_corridor = {
         "height": 1.0, 
@@ -342,6 +500,7 @@ def main():
         "resolution": 0.01,
         "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
     }
+    cfg_corridor = {"corridor": cfg_corridor}
     corridor = CorridorMap(cfg_corridor)
     corridor.reset_gt_and_belief(seed=seed)
 
@@ -353,6 +512,7 @@ def main():
         "corridor_width": 0.3, # 미로 길 폭 25cm
         "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
     }
+    cfg_maze = {"maze": cfg_maze}
     maze = MazeMap(cfg_maze)
     maze.reset_gt_and_belief(seed=seed)
 
@@ -363,16 +523,31 @@ def main():
         "resolution": 0.01,
         "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
     }
+    cfg_random = {"random": cfg_random}
     random_map = RandomObstacleMap(cfg_random)
     random_map.reset_gt_and_belief(seed=seed)
 
-    # 3. 시각화 실행
+
+    # (D) Single Maze Map (2.5m x 2.5m)
+    cfg_single_maze = {
+        "height": 2.5, 
+        "width": 2.5, 
+        "resolution": 0.01,
+        "corridor_width": 0.3, # 미로 길 폭 25cm
+        "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
+    }
+    cfg_single_maze = {"single_maze": cfg_single_maze}
+    single_maze = SingleMazeMap(cfg_single_maze)
+    single_maze.reset_gt_and_belief(seed=seed)
+    
+    # 시각화 실행
     maps_to_plot = [
         ("Corridor Map", corridor),
         ("Maze Map", maze),
-        ("Random Obstacle Map", random_map)
+        ("Random Obstacle Map", random_map),
+        ("Single Maze Map", single_maze)
     ]
-    
+
     visualize_maps(maps_to_plot, save_path="test_maps_output.png")
 
 if __name__ == "__main__":

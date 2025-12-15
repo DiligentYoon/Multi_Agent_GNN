@@ -57,6 +57,8 @@ class RolloutWorker:
             cfg['env']['map']['type'] = 'maze'
         elif map_type == 2:
             cfg['env']['map']['type'] = 'random'
+        elif map_type == 3:
+            cfg['env']['map']['type'] = 'single_maze'
         else:
             cfg['env']['map']['type'] = 'corridor'
         

@@ -7,7 +7,7 @@ from typing import Tuple, Optional, Callable
 from .env_cfg import EnvCfg
 from task.utils import *
 
-from .map_generator import CorridorMap, RandomObstacleMap, MazeMap
+from .map_generator import CorridorMap, RandomObstacleMap, MazeMap, SingleMazeMap
 
 class MapInfo:
     def __init__(self, cfg: dict):
@@ -143,6 +143,8 @@ class Env():
             self.map_info = MazeMap(cfg=cfg.map)
         elif cfg.map['type'] == 'random':
             self.map_info = RandomObstacleMap(cfg=cfg.map)
+        elif cfg.map['type'] == 'single_maze':
+            self.map_info = SingleMazeMap(cfg=cfg.map)
         else:
             self.map_info = CorridorMap(cfg=cfg.map)
             print('[Warning] Unvalid Map Type. So, Corridor map is forced to choose')
