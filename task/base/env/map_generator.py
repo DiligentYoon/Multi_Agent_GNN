@@ -451,41 +451,63 @@ class SingleMazeMap(MapBase):
         self.add_random_obstacles(n=10, min_m=0.03, max_m=0.1, seed=seed, max_attempts=10000, min_dist=0.1)
 
 
-def visualize_maps(maps_list, save_path="generated_maps.png"):
+def visualize_maps(maps_list, save_path="generated_maps.png", flip_rows=True):
     """
     생성된 맵 리스트를 받아 Matplotlib으로 시각화하고 저장하는 함수
+    - x 라벨 겹침 방지: 맨 아래 행에만 x-label/tick 표시
+    - flip_rows=True이면 이미지 행을 상하 반전(np.flipud)하여 표시
     """
     n_maps = len(maps_list)
     fig, axes = plt.subplots(n_maps, 2, figsize=(12, 5 * n_maps))
-    
-    # 맵 마스크 정의 (0:Free, 1:Occupied, 2:Unknown, 3:Start, 4:Goal)
-    # 색상 매핑: Free(흰색), Occupied(검정), Unknown(회색), Start(초록), Goal(빨강)
+    axes = np.atleast_2d(axes)  # n_maps=1이어도 (1,2) 형태로 정규화
+
+    # 0:Free, 1:Occupied, 2:Unknown, 3:Start, 4:Goal
     cmap = mcolors.ListedColormap(['white', 'black', 'lightgray', 'limegreen', 'red'])
     bounds = [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
+    im_gt = None  # colorbar용 핸들
+
     for i, (map_name, map_obj) in enumerate(maps_list):
+        gt = map_obj.gt
+        bl = map_obj.belief
+
+        # 행(세로) 뒤집기
+        if flip_rows:
+            gt = np.flipud(gt)
+            bl = np.flipud(bl)
+
         # Ground Truth Plot
-        ax_gt = axes[i][0] if n_maps > 1 else axes[0]
-        im_gt = ax_gt.imshow(map_obj.gt, cmap=cmap, norm=norm, origin='lower', interpolation='nearest')
+        ax_gt = axes[i, 0]
+        im_gt = ax_gt.imshow(gt, cmap=cmap, norm=norm, origin='lower', interpolation='nearest')
         ax_gt.set_title(f"{map_name} - Ground Truth")
-        ax_gt.set_xlabel("Grid X")
         ax_gt.set_ylabel("Grid Y")
 
         # Belief Plot
-        ax_bl = axes[i][1] if n_maps > 1 else axes[1]
-        im_bl = ax_bl.imshow(map_obj.belief, cmap=cmap, norm=norm, origin='lower', interpolation='nearest')
+        ax_bl = axes[i, 1]
+        ax_bl.imshow(bl, cmap=cmap, norm=norm, origin='lower', interpolation='nearest')
         ax_bl.set_title(f"{map_name} - Belief (Initial)")
-        ax_bl.set_xlabel("Grid X")
         ax_bl.set_ylabel("Grid Y")
 
-    # 범례(Legend) 추가
-    # 0:Free, 1:Obs, 2:Unk, 3:Start, 4:Goal
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7]) # 위치 조정
+        # x 라벨/틱 겹침 방지: 마지막 행에만 표시
+        if i == n_maps - 1:
+            ax_gt.set_xlabel("Grid X")
+            ax_bl.set_xlabel("Grid X")
+        else:
+            ax_gt.set_xlabel("")
+            ax_bl.set_xlabel("")
+            ax_gt.tick_params(axis='x', labelbottom=False)
+            ax_bl.tick_params(axis='x', labelbottom=False)
+
+    # colorbar (기존 방식 유지)
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
     cbar = fig.colorbar(im_gt, cax=cbar_ax, ticks=[0, 1, 2, 3, 4])
     cbar.ax.set_yticklabels(['Free', 'Occupied', 'Unknown', 'Start', 'Goal'])
 
-    plt.tight_layout(rect=[0, 0, 0.9, 1]) # 범례 공간 확보
+    # 레이아웃 여유(라벨 겹침 추가 완화)
+    plt.tight_layout(rect=[0, 0, 0.9, 1])
+    plt.subplots_adjust(hspace=0.35)  # 필요 시 수치 조정
+
     plt.savefig(save_path, dpi=150)
     plt.show()
     print(f"이미지가 저장되었습니다: {save_path}")
