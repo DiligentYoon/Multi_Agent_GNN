@@ -659,7 +659,8 @@ class NavEnv(Env):
 
             # Forward Connectivity Target Info
             min_dist = np.linalg.norm(p_p)
-            if (min_dist < self.neighbor_radius* 0.95) or (parent_id == -1):
+            # if (min_dist < self.neighbor_radius* 0.95) or (parent_id == -1):
+            if (min_dist < self.cfg.d_conn) or (parent_id == -1):
                 # Connectivity 유지 중인 Parent Node & Parent가 없는 Root Node
                 on_conn = False
                 start_cell = self.map_info.world_to_grid_np(pos_i) # (col, row)
