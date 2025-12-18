@@ -292,8 +292,9 @@ def run_simulation_test(args: argparse.Namespace,
         print(f"Results (Success/Failure) : {env.is_success}\n")
 
         # --- Metrics Calculation (end of episode) ---
+        total_explorable_region = np.nonzero(env.map_info.gt == env.map_info.map_mask["free"])
         traversal_time_sec = (final_step_num + 1) * env.dt * env.decimation
-        coverage_rate = env.prev_explored_region / (env.map_info.H * env.map_info.W)
+        coverage_rate = env.prev_explored_region / (total_explorable_region[0].shape[0])
         connectivity_rate = connected_steps / (final_step_num + 1)
 
         episode_results = {
@@ -500,7 +501,7 @@ def viz_simulation_test(cfg: dict,
         imageio.mimsave(gif_path, frames, fps=30)
     
         total_explorable_region = np.nonzero(env.map_info.gt == env.map_info.map_mask["free"])
-        coverage_rate = 100 * max(1, env.prev_explored_region / (total_explorable_region.shape[0]))
+        coverage_rate = 100 * max(1, env.prev_explored_region / (total_explorable_region[0].shape[0]))
     
         return total_reward, coverage_rate
     finally:
