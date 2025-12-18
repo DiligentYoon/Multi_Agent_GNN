@@ -128,11 +128,13 @@ def main(cfg: dict, args: argparse.Namespace):
     num_workers = cfg['ray']['num_workers']
     num_map_type = cfg['env']['num_map_type']
 
-    base = np.arange(num_map_type)
-    repeat_count = int(np.ceil(num_workers / num_map_type))
-    assignments = np.tile(base, repeat_count)[:num_workers]
-    np.random.shuffle(assignments)
-    worker_map_type = assignments.tolist()
+    # base = np.arange(num_map_type)
+    # repeat_count = int(np.ceil(num_workers / num_map_type))
+    # assignments = np.tile(base, repeat_count)[:num_workers]
+    # np.random.shuffle(assignments)
+    # worker_map_type = assignments.tolist()
+
+    worker_map_type = np.hstack([np.ones(int(num_workers/2), dtype=np.long), 4 * np.ones(int(num_workers/2), dtype=np.long)]).tolist()
 
     workers = [RolloutWorker.remote(model_version=args.version, worker_id=i, cfg=cfg, map_type=worker_map_type[i]) for i in range(num_workers)]
     print(f"{num_workers} rollout workers created.")
