@@ -139,15 +139,15 @@ def run_simulation_test(args: argparse.Namespace,
     
     # Use a deepcopy of cfg for env creation to avoid modification issues
     env_cfg = copy.deepcopy(cfg['env'])
-    env = NavEnv(episode_index=0, device=device, cfg=env_cfg, is_train=False, max_episode_steps=steps)
+    temp_env = NavEnv(episode_index=0, device=device, cfg=env_cfg, is_train=False, max_episode_steps=steps)
     
     # --- Agent & Models ---
-    pr = env.cfg.pooling_downsampling_rate
+    pr = temp_env.cfg.pooling_downsampling_rate
     num_agents = cfg['env']['num_agent']
     observation_space = gym.spaces.Box(0, 1, (8 + num_agents, 
-                                              env.obs_manager.global_map_size // pr, 
-                                              env.obs_manager.global_map_size // pr), dtype='uint8')
-    action_space = gym.spaces.Box(0, (env.obs_manager.global_map_size // pr) * (env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
+                                              temp_env.obs_manager.global_map_size // pr, 
+                                              temp_env.obs_manager.global_map_size // pr), dtype='uint8')
+    action_space = gym.spaces.Box(0, (temp_env.obs_manager.global_map_size // pr) * (temp_env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
     
     actor_critic_model = create_model(cfg['model'], observation_space, action_space, device, args.version)
     agent, buffer = create_agent(cfg['agent'], actor_critic_model, num_agents,
@@ -155,6 +155,8 @@ def run_simulation_test(args: argparse.Namespace,
     if args.checkpoint is not None:
         agent.load(args.checkpoint, device=device)
         print(f"Loaded checkpoint from {args.checkpoint}")
+
+    del temp_env
 
     # --- Data Storage for All Episodes ---
     evaluation_results = []
@@ -213,6 +215,7 @@ def run_simulation_test(args: argparse.Namespace,
             frames.append(frame.copy())
 
         # ================ Simulation Start for One Episode ====================
+        env =  NavEnv(episode_index=current_seed, device=device, cfg=env_cfg, is_train=False, max_episode_steps=steps)
         obs, _, info = env.reset(episode_index=current_seed)
 
         l = buffer.mini_step * buffer.mini_step_size
@@ -286,7 +289,7 @@ def run_simulation_test(args: argparse.Namespace,
                 break
         
         print(f"Episode {episode_num+1} finished at step {final_step_num + 1}.")
-        print(f"Results (Success/Failure) : {env.is_success}")
+        print(f"Results (Success/Failure) : {env.is_success}\n")
 
         # --- Metrics Calculation (end of episode) ---
         traversal_time_sec = (final_step_num + 1) * env.dt * env.decimation
