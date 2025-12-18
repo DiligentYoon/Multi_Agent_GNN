@@ -319,7 +319,7 @@ def run_simulation_test(args: argparse.Namespace,
     
     # Save to CSV
     os.makedirs(out_dir, exist_ok=True)
-    csv_path = os.path.join(out_dir, 'evaluation_metrics.csv')
+    csv_path = os.path.join(out_dir, f'evaluation_metrics_{args.map_type}.csv')
     df.to_csv(csv_path, index=False)
     print(f"Saved evaluation results to {csv_path}")
     print("="*50)
