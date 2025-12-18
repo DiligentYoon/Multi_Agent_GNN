@@ -161,14 +161,14 @@ def run_simulation_test(args: argparse.Namespace,
 
     for episode_num in range(num_episodes):
         current_seed = (args.seed if args.seed != -1 else 0) + episode_num
-        print(f"Starting Episode {episode_num + 1}/{num_episodes} with Seed {current_seed} ---")
+        print(f"Starting Episode {episode_num + 1}/{num_episodes} with Seed {current_seed}")
 
         # --- Per-Episode Data Tracking ---
         episode_min_inter_agent_dist = float('inf')
         connected_steps = 0
         
         # --- Visualization Setup (only for the first episode if enabled) ---
-        visualize_this_episode = visualize and episode_num == 0
+        visualize_this_episode = visualize
         frames: List[np.ndarray] = []
         fig, ax1, ax2 = None, None, None
         if visualize_this_episode:
@@ -273,7 +273,8 @@ def run_simulation_test(args: argparse.Namespace,
             if is_connected_this_step:
                 connected_steps += 1
 
-            # print(f"Episode {episode_num+1}, Step {step_num+1}/{steps}, Reward: {reward.item():.2f}", end='')
+            if visualize_this_episode:
+                print(f"Episode {episode_num+1}, Step {step_num+1}/{steps}, Reward: {reward.item():.2f}")
 
             obs, info, mask = copy.deepcopy(next_obs), copy.deepcopy(next_info), copy.deepcopy(~done)
             
@@ -481,7 +482,8 @@ def viz_simulation_test(cfg: dict,
     print(f"GIF saved at step {step_num+1}.")
     imageio.mimsave(gif_path, frames, fps=30)
 
-    coverage_rate = 100 * env.prev_explored_region / (env.map_info.H * env.map_info.W)
+    total_explorable_region = np.nonzero(env.map_info.gt == env.map_info.map_mask["free"])
+    coverage_rate = 100 * max(1, env.prev_explored_region / (total_explorable_region.shape[0]))
 
     return total_reward, coverage_rate
 
@@ -502,7 +504,7 @@ if __name__ == '__main__':
     parser.add_argument("--version", type=int, default=1, help="Verison of the model.")
     parser.add_argument("--seed", type=int, default=0, help="Seed number for randomization. Default is 0.")
     parser.add_argument("--episodes", type=int, default=10, help="Number of episodes to run for evaluation.")
-    parser.add_argument("--no_visualize", type=bool, default=True, help="Disable visualization to run faster.")
+    parser.add_argument("--visualize", action="store_true", help="Disable visualization to run faster.")
 
 
     args = parser.parse_args()
@@ -511,6 +513,6 @@ if __name__ == '__main__':
     run_simulation_test(args,
                         config,
                         steps=400, 
-                        visualize=not args.no_visualize,
+                        visualize=args.visualize,
                         num_episodes=args.episodes)
 
