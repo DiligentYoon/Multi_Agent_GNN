@@ -163,6 +163,10 @@ def run_simulation_test(args: argparse.Namespace,
         current_seed = (args.seed if args.seed != -1 else 0) + episode_num
         print(f"Starting Episode {episode_num + 1}/{num_episodes} with Seed {current_seed}")
 
+        # Set global seeds for consistent environment generation per episode
+        torch.manual_seed(current_seed)
+        np.random.seed(current_seed)
+
         # --- Per-Episode Data Tracking ---
         episode_min_inter_agent_dist = float('inf')
         connected_steps = 0
@@ -273,7 +277,7 @@ def run_simulation_test(args: argparse.Namespace,
             if is_connected_this_step:
                 connected_steps += 1
 
-            if visualize_this_episode:
+            if num_episodes == 1:
                 print(f"Episode {episode_num+1}, Step {step_num+1}/{steps}, Reward: {reward.item():.2f}")
 
             obs, info, mask = copy.deepcopy(next_obs), copy.deepcopy(next_info), copy.deepcopy(~done)
@@ -343,151 +347,163 @@ def viz_simulation_test(cfg: dict,
             load_file_path: Path to load checkpoint from (used if agent_model is None)
             agent_model: Pre-loaded model object (used for evaluation during training)
     """
-    cfg = copy.deepcopy(cfg)
-    # --- Device ---
-    device = torch.device(cfg['env']['device'])
-    # --- Environment ---
-    type_list = ['corridor', 'maze', 'random', 'single_maze']
-    cfg['env']['map']['type'] = type_list[map_type]
-    env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train, max_episode_steps=steps)
-    # --- Agent & Models ---
-    pr = env.cfg.pooling_downsampling_rate
-    num_agents = cfg['env']['num_agent']
-    observation_space = gym.spaces.Box(0, 1, (8 + num_agents, env.obs_manager.global_map_size // pr, env.obs_manager.global_map_size // pr), dtype='uint8')
-    action_space = gym.spaces.Box(0, (env.obs_manager.global_map_size // pr) * (env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
+    # Save current global RNG state to preserve training randomness
+    rng_state_np = np.random.get_state()
+    rng_state_torch = torch.get_rng_state()
+
+    # Set deterministic seed for evaluation to ensure consistent environment conditions
+    eval_seed = 25
+    torch.manual_seed(eval_seed)
+    np.random.seed(eval_seed)
+
+    try:
+        cfg = copy.deepcopy(cfg)
+        # --- Device ---
+        device = torch.device(cfg['env']['device'])
+        # --- Environment ---
+        type_list = ['corridor', 'maze', 'random', 'single_maze']
+        cfg['env']['map']['type'] = type_list[map_type]
+        env = NavEnv(episode_index=0, device=device, cfg=cfg['env'], is_train=is_train, max_episode_steps=steps)
+        # --- Agent & Models ---
+        pr = env.cfg.pooling_downsampling_rate
+        num_agents = cfg['env']['num_agent']
+        observation_space = gym.spaces.Box(0, 1, (8 + num_agents, env.obs_manager.global_map_size // pr, env.obs_manager.global_map_size // pr), dtype='uint8')
+        action_space = gym.spaces.Box(0, (env.obs_manager.global_map_size // pr) * (env.obs_manager.global_map_size // pr) - 1, (num_agents,), dtype='int32')
+        
+        actor_critic_model = agent_model
+        agent, buffer = create_agent(cfg['agent'], actor_critic_model, num_agents,
+                                     cfg['train']['eval_freq'], observation_space, action_space, device)
     
-    actor_critic_model = agent_model
-    agent, buffer = create_agent(cfg['agent'], actor_critic_model, num_agents,
-                                 cfg['train']['eval_freq'], observation_space, action_space, device)
-
-    # --- Visualization and Data Tracking Setup ---
-    frames: List[np.ndarray] = []
-    fig, ax1, ax2 = None, None, None
-    if map_type == 0:
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
-    else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-
-    path_history  = [[] for _ in range(num_agents)]
-    cbf_history   = [[] for _ in range(num_agents)]
-
-    # --- Callback for rendering each physics step ---
-    def render_callback(env_instance: NavEnv):
-        # This function is only called if visualize is True.
-        for j in range(num_agents):
-            path_history[j].append((env_instance.robot_locations[j, 0], env_instance.robot_locations[j, 1]))
-
-        # Create a list of agent pairs for connectivity visualization
-        connectivity_pairs = []
-        for i in range(env_instance.num_agent):
-            pos1 = env_instance.robot_locations[i]
-            if not env_instance.root_mask[i]:
-                parent_id = env_instance.connectivity_graph.get_parent(i)
-                pos2 = env_instance.robot_locations[parent_id]
-            else:
-                pos2 = pos1
-            connectivity_pairs.append((pos1, pos2))
-
-
-        # Create a dictionary with visualization data
-        viz_data = {
-            "paths": path_history,
-            "obs_local": env_instance.obstacle_states,
-            "connectivity_pairs": connectivity_pairs,
-            "target_local": env_instance.cbf_infos["nominal"]["p_targets"],
-            "connectivity_trajs": env_instance.connectivity_traj,
-        }
-
-        # Call the draw_frame function
-        draw_frame(ax1, ax2, env_instance, viz_data)
-        
-        fig.canvas.draw()
-        buf = fig.canvas.buffer_rgba()
-        frame = np.asarray(buf, dtype=np.uint8)[..., :3]
-        frames.append(frame.copy())
-
-    # Determine which callback to use
-    callback_fn = render_callback
-
-    # ================ Simulation Start ====================
-    obs, _, info = env.reset(episode_index=25)
-
-    # 초기 액션 세팅 + 스텝
-    l = buffer.mini_step * buffer.mini_step_size
-    h = (buffer.mini_step + 1) * buffer.mini_step_size
-    buffer.obs[0][l:h].copy_(obs.view(1, *observation_space.shape))
-    buffer.extras[0][l:h].copy_(info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate)
-
-    ll, lh = l-buffer.mini_step_size, h-buffer.mini_step_size
-    if lh == 0:
-        lh = buffer.mini_step_size * buffer.num_rollout_blocks
-    # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (코드 처음에만 수행)
-    buffer.obs[-1][ll:lh].copy_(buffer.obs[0][l:h])
-    buffer.rec_states[-1][ll:lh].copy_(buffer.rec_states[0][l:h])
-    buffer.extras[-1][ll:lh].copy_(buffer.extras[0][l:h])
-
-    # act를 위한 변수 초기화
-    rec_states = buffer.rec_states[0][l:h]
-    mask = buffer.masks[0][l:h]
-
-    total_reward = 0
-    for step_num in range(steps):
-
-        with torch.no_grad():
-            values, actions, action_log_probs, \
-            rec_states, action_maps             = agent.act(obs.view(1, *observation_space.shape),
-                                                            rec_states,
-                                                            mask,
-                                                            info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
-                                                            deterministic=True)
-
-        # 시점 t+1에서의 observation, reward, done 추출
-        next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
-        done = torch.logical_or(terminated, truncated)
-
-        for j in range(num_agents):
-            # Obstacle distance for CBF plot
-            obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
-            if env.num_obstacles[j] == 0:
-                min_dist = env.cfg.sensor_range**2
-            else:
-                dist = np.linalg.norm(obs_state, axis=1)
-                min_ids = np.argmin(dist)
-                min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
+        # --- Visualization and Data Tracking Setup ---
+        frames: List[np.ndarray] = []
+        fig, ax1, ax2 = None, None, None
+        if map_type == 0:
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
+        else:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    
+        path_history  = [[] for _ in range(num_agents)]
+        cbf_history   = [[] for _ in range(num_agents)]
+    
+        # --- Callback for rendering each physics step ---
+        def render_callback(env_instance: NavEnv):
+            # This function is only called if visualize is True.
+            for j in range(num_agents):
+                path_history[j].append((env_instance.robot_locations[j, 0], env_instance.robot_locations[j, 1]))
+    
+            # Create a list of agent pairs for connectivity visualization
+            connectivity_pairs = []
+            for i in range(env_instance.num_agent):
+                pos1 = env_instance.robot_locations[i]
+                if not env_instance.root_mask[i]:
+                    parent_id = env_instance.connectivity_graph.get_parent(i)
+                    pos2 = env_instance.robot_locations[parent_id]
+                else:
+                    pos2 = pos1
+                connectivity_pairs.append((pos1, pos2))
+    
+    
+            # Create a dictionary with visualization data
+            viz_data = {
+                "paths": path_history,
+                "obs_local": env_instance.obstacle_states,
+                "connectivity_pairs": connectivity_pairs,
+                "target_local": env_instance.cbf_infos["nominal"]["p_targets"],
+                "connectivity_trajs": env_instance.connectivity_traj,
+            }
+    
+            # Call the draw_frame function
+            draw_frame(ax1, ax2, env_instance, viz_data)
             
-            # Connectivity distance for CBF plot
-            p_c = env.cbf_infos["safety"]["p_c_agent"][j].reshape(-1)
-            if len(p_c) > 0:
-                min_agent_dist = p_c[0]**2 + p_c[1]**2
-            else:
-                min_agent_dist = 0
+            fig.canvas.draw()
+            buf = fig.canvas.buffer_rgba()
+            frame = np.asarray(buf, dtype=np.uint8)[..., :3]
+            frames.append(frame.copy())
+    
+        # Determine which callback to use
+        callback_fn = render_callback
+    
+        # ================ Simulation Start ====================
+        obs, _, info = env.reset(episode_index=eval_seed) # Use the fixed eval_seed
+    
+        # 초기 액션 세팅 + 스텝
+        l = buffer.mini_step * buffer.mini_step_size
+        h = (buffer.mini_step + 1) * buffer.mini_step_size
+        buffer.obs[0][l:h].copy_(obs.view(1, *observation_space.shape))
+        buffer.extras[0][l:h].copy_(info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate)
+    
+        ll, lh = l-buffer.mini_step_size, h-buffer.mini_step_size
+        if lh == 0:
+            lh = buffer.mini_step_size * buffer.num_rollout_blocks
+        # Buffer의 Insert에서 이전 롤아웃의 마지막 상태를 현재 롤아웃의 첫 상태로 복사하는 로직에 맞춘 할당 (코드 처음에만 수행)
+        buffer.obs[-1][ll:lh].copy_(buffer.obs[0][l:h])
+        buffer.rec_states[-1][ll:lh].copy_(buffer.rec_states[0][l:h])
+        buffer.extras[-1][ll:lh].copy_(buffer.extras[0][l:h])
+    
+        # act를 위한 변수 초기화
+        rec_states = buffer.rec_states[0][l:h]
+        mask = buffer.masks[0][l:h]
+    
+        total_reward = 0
+        for step_num in range(steps):
+    
+            with torch.no_grad():
+                values, actions, action_log_probs, \
+                rec_states, action_maps             = agent.act(obs.view(1, *observation_space.shape),
+                                                                rec_states,
+                                                                mask,
+                                                                info["additional_obs"].view(1, -1) // env.cfg.pooling_downsampling_rate,
+                                                                deterministic=True)
+    
+            # 시점 t+1에서의 observation, reward, done 추출
+            next_obs, _, reward, terminated, truncated, next_info = env.step(actions, on_physics_step=callback_fn)
+            done = torch.logical_or(terminated, truncated)
+    
+            for j in range(num_agents):
+                # Obstacle distance for CBF plot
+                obs_state = env.obstacle_states[j, :env.num_obstacles[j]]
+                if env.num_obstacles[j] == 0:
+                    min_dist = env.cfg.sensor_range**2
+                else:
+                    dist = np.linalg.norm(obs_state, axis=1)
+                    min_ids = np.argmin(dist)
+                    min_dist = obs_state[min_ids, 0]**2 + obs_state[min_ids, 1]**2
+                
+                # Connectivity distance for CBF plot
+                p_c = env.cbf_infos["safety"]["p_c_agent"][j].reshape(-1)
+                if len(p_c) > 0:
+                    min_agent_dist = p_c[0]**2 + p_c[1]**2
+                else:
+                    min_agent_dist = 0
+                
+                agent_cbf_info = {"obs_avoid": min_dist - env.cfg.d_safe**2,
+                                  "agent_conn": env.neighbor_radius**2 - min_agent_dist}
+                cbf_history[j].append(agent_cbf_info)
+    
+            # 데이터 집계
+            total_reward += reward.item()
+    
+            # 시점 transition
+            obs = copy.deepcopy(next_obs)
+            info = copy.deepcopy(next_info)
+            mask = copy.deepcopy(~done)
             
-            agent_cbf_info = {"obs_avoid": min_dist - env.cfg.d_safe**2,
-                              "agent_conn": env.neighbor_radius**2 - min_agent_dist}
-            cbf_history[j].append(agent_cbf_info)
-
-        # 데이터 집계
-        total_reward += reward.item()
-
-        # 시점 transition
-        obs = copy.deepcopy(next_obs)
-        info = copy.deepcopy(next_info)
-        mask = copy.deepcopy(~done)
-        
-        if done:
-            break
-
-    plt.close(fig)
-    # --- Save GIF ---
-    print(f"GIF saved at step {step_num+1}.")
-    imageio.mimsave(gif_path, frames, fps=30)
-
-    total_explorable_region = np.nonzero(env.map_info.gt == env.map_info.map_mask["free"])
-    coverage_rate = 100 * max(1, env.prev_explored_region / (total_explorable_region.shape[0]))
-
-    return total_reward, coverage_rate
-
-
+            if done:
+                break
+    
+        plt.close(fig)
+        # --- Save GIF ---
+        print(f"GIF saved at step {step_num+1}.")
+        imageio.mimsave(gif_path, frames, fps=30)
+    
+        total_explorable_region = np.nonzero(env.map_info.gt == env.map_info.map_mask["free"])
+        coverage_rate = 100 * max(1, env.prev_explored_region / (total_explorable_region.shape[0]))
+    
+        return total_reward, coverage_rate
+    finally:
+        # Restore original global RNG state
+        np.random.set_state(rng_state_np)
+        torch.set_rng_state(rng_state_torch)
 
 if __name__ == '__main__':
     # Load config
@@ -515,4 +531,3 @@ if __name__ == '__main__':
                         steps=400, 
                         visualize=args.visualize,
                         num_episodes=args.episodes)
-

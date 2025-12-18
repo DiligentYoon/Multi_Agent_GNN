@@ -39,8 +39,12 @@ import gymnasium as gym
 
 def main(cfg: dict, args: argparse.Namespace):
     # --- Setup ---
+    # Set seeds for reproducibility across torch, numpy, and random
     torch.manual_seed(cfg['env']['seed'])
     np.random.seed(cfg['env']['seed'])
+    import random
+    random.seed(cfg['env']['seed'])
+    
     device = torch.device(cfg['env']['device'])
     
     # --- Output Directory & Writer ---

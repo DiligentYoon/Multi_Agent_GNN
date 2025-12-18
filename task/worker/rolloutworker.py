@@ -11,6 +11,7 @@ import copy
 import torch
 import random
 import gymnasium as gym
+import numpy as np
 
 from collections import deque
 from task.env.nav_env import NavEnv
@@ -65,6 +66,13 @@ class RolloutWorker:
         self.worker_id = worker_id
         self.cfg = cfg
         self.device = torch.device("cpu")
+        
+        # --- Seed Setting for Reproducibility ---
+        # Set a unique but deterministic seed for each worker
+        worker_seed = cfg['env']['seed'] + worker_id
+        torch.manual_seed(worker_seed)
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
         
         # --- Environment, Model, Agent, and Buffer ---
         self.env = NavEnv(episode_index=worker_id, device=self.device, cfg=cfg['env'])
