@@ -164,7 +164,8 @@ class RolloutWorker:
                         self.first = False
                     else:
                         is_success.append(0)
-                coverage_rate.append(self.env.prev_explored_region / (self.env.map_info.H * self.env.map_info.W))
+                total_explorable_region = np.nonzero(self.env.map_info.gt == self.env.map_info.map_mask["free"])
+                coverage_rate.append(self.env.prev_explored_region / (total_explorable_region[0].shape[0]))
                 episode_step.append(copy.deepcopy(self.episode_step))
                 self.episode_step = 0
                 self.last_obs, _, self.last_info = self.env.reset(episode_index=random.randint(0, 100))
