@@ -521,7 +521,15 @@ def save_each_map_gt(maps_list,
     os.makedirs(out_dir, exist_ok=True)
 
     # 0:Free, 1:Occupied, 2:Unknown, 3:Start, 4:Goal
-    cmap = mcolors.ListedColormap(['white', 'black', 'lightgray', 'limegreen', 'red'])
+    # cmap = mcolors.ListedColormap(['white', 'black', 'lightgray', 'limegreen', 'red'])
+    color_255 = np.array([
+        [255, 255, 255],
+        [0, 0, 0],
+        [230, 230, 230],
+        [50, 200, 80],
+        [180, 50, 200],
+    ], dtype=float)
+    cmap = mcolors.ListedColormap(color_255 / 255.0)
     bounds = [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
 

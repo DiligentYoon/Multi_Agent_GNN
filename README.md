@@ -1,4 +1,4 @@
-# Connectivity-Aware Multi Robot Exploration and Navigation in Cluttered Corridors
+# Connectivity-Aware Multi Robot Exploration and Navigation in Cluttered Corridors Using Graph Attention Network
 
 This project implements a Multi-Agent Reinforcement Learning (MARL) framework for navigation tasks using Graph Neural Networks (GNN) and Proximal Policy Optimization (PPO). It features a centralized learner with distributed rollout workers using Ray, and supports multiple model architectures including a specialized "CoMapping" policy.
 
@@ -68,21 +68,12 @@ python test_main_driver.py --checkpoint <PATH_TO_CHECKPOINT> --version <VERSION>
 *   `--version`: Model version used during training (`1`, `2`, or `3`).
 *   `--map_type`: Map type to test on (`corridor`, `maze`, `random`, `single_maze`).
 *   `--episodes`: Number of episodes to run (default: 10).
-*   `--no_visualize`: Set to `True` to disable GIF generation for faster evaluation.
+*   `--visualize`: Set to `True` to enable GIF generation for specific evaluation.
 
 ## Models
 
 1.  **Version 1 (`RL_ActorCritic`)**: A standard centralized PPO architecture where a GNN processes agent observations, and a shared actor-critic network determines actions.
 2.  **Version 2 (`RL_Policy`)**: Similar to Version 1 but utilizes agent-wise distributions for more granular control over individual agent actions.
-3.  **CoMapping (`RL_CoMapping_Policy`)**: The default and most advanced model. It integrates a `MapEncoder` and `Differentiable Optimal Transport` (Sinkhorn) to better handle spatial reasoning and coordination tasks.
+3.  **Version 3 (`RL_CoMapping_Policy`)**: The default and most advanced model. It integrates a `MapEncoder` and `Differentiable Optimal Transport` (Sinkhorn) to better handle spatial reasoning and coordination tasks.
 
 ## Results
-
-Training results (TensorBoard logs) and checkpoints are saved in the `results/` directory, organized by timestamp.
-
-```
-results/
-└── YY-MM-DD_HH-MM-SS_MARL/
-    ├── checkpoints/    # Model weights (.pt)
-    └── events...       # TensorBoard logs
-```

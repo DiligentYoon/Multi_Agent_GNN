@@ -178,7 +178,10 @@ def run_simulation_test(args: argparse.Namespace,
         frames: List[np.ndarray] = []
         fig, ax1, ax2 = None, None, None
         if visualize_this_episode:
+            snap_dir = os.path.join(out_dir, f"snapshots_ep_{episode_num+1}_seed_{current_seed}")
+            os.makedirs(snap_dir, exist_ok=True)
             print("Visualization is ON for this episode.")
+            print(f"Snapshots will be saved to {snap_dir}.")
             if args.map_type == 'corridor':
                 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 6))
             else:
@@ -282,6 +285,10 @@ def run_simulation_test(args: argparse.Namespace,
 
             if num_episodes == 1:
                 print(f"Episode {episode_num+1}, Step {step_num+1}/{steps}, Reward: {reward.item():.2f}")
+
+            if visualize_this_episode and ((step_num + 1) % 10 == 0):
+                snap_path = os.path.join(snap_dir, f"step_{step_num+1:04d}.png")
+                fig.savefig(snap_path, dpi=150, bbox_inches='tight', pad_inches=0)
 
             obs, info, mask = copy.deepcopy(next_obs), copy.deepcopy(next_info), copy.deepcopy(~done)
             

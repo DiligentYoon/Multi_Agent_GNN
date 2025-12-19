@@ -126,11 +126,11 @@ def draw_frame(ax_gt, ax_belief, env, viz_data: dict):
             ax.scatter(fx, fy, s=50, c=color, marker='*')
         
         # --- Path history ---
-        # path = viz_data["paths"][i]
-        # if len(path) > 1:
-        #     xs, ys = zip(*[world_to_img(wx, wy) for wx, wy in path])
-        #     for ax in (ax_gt, ax_belief):
-        #         ax.plot(xs, ys, '-', linewidth=2, color=color, alpha=0.8, zorder=3)
+        path = viz_data["paths"][i]
+        if len(path) > 1:
+            xs, ys = zip(*[world_to_img(wx, wy) for wx, wy in path])
+            for ax in (ax_gt, ax_belief):
+                ax.plot(xs, ys, '-', linewidth=2, color=color, alpha=0.8, zorder=3)
 
         # --- Robot heading/velocity arrow ---
         v_cmd = np.sqrt(env.robot_velocities[i, 0]**2 + env.robot_velocities[i, 1]**2)
