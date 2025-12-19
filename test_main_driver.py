@@ -286,8 +286,11 @@ def run_simulation_test(args: argparse.Namespace,
             if num_episodes == 1:
                 print(f"Episode {episode_num+1}, Step {step_num+1}/{steps}, Reward: {reward.item():.2f}")
 
-            if visualize_this_episode and ((step_num + 1) % 10 == 0):
-                snap_path = os.path.join(snap_dir, f"step_{step_num+1:04d}.png")
+            if visualize_this_episode and ((step_num + 1) % 10 == 0) or done:
+                if done:
+                    snap_path = os.path.join(snap_dir, f"final_step.png")
+                else:
+                    snap_path = os.path.join(snap_dir, f"step_{step_num+1:04d}.png")
                 fig.savefig(snap_path, dpi=150, bbox_inches='tight', pad_inches=0)
 
             obs, info, mask = copy.deepcopy(next_obs), copy.deepcopy(next_info), copy.deepcopy(~done)
