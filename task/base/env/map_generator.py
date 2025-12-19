@@ -2,7 +2,7 @@ import numpy as np
 from typing import Tuple, Optional, List
 from abc import abstractmethod
 import random
-
+import os
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
@@ -512,65 +512,101 @@ def visualize_maps(maps_list, save_path="generated_maps.png", flip_rows=True):
     plt.show()
     print(f"이미지가 저장되었습니다: {save_path}")
 
+
+def save_each_map_gt(maps_list,
+                     out_dir="maps_out",
+                     flip_rows=True,
+                     dpi=300,
+                     seed=0):
+    os.makedirs(out_dir, exist_ok=True)
+
+    # 0:Free, 1:Occupied, 2:Unknown, 3:Start, 4:Goal
+    cmap = mcolors.ListedColormap(['white', 'black', 'lightgray', 'limegreen', 'red'])
+    bounds = [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5]
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
+    for map_name, map_obj in maps_list:
+        gt = map_obj.gt
+        if flip_rows:
+            gt = np.flipud(gt)
+
+        # (선택) 셀 해상도 그대로 저장하고 싶으면 figsize를 배열 크기에 맞춤
+        H, W = gt.shape
+        fig = plt.figure(figsize=(W / dpi, H / dpi), dpi=dpi)
+        ax = fig.add_axes([0, 0, 1, 1])  # 여백 0
+        ax.imshow(gt, cmap=cmap, norm=norm, origin='lower', interpolation='nearest')
+        ax.set_axis_off()
+
+        safe_name = map_name.replace(" ", "_").replace("/", "_")
+        save_path = os.path.join(out_dir, f"{safe_name}_{seed}.png")
+        fig.savefig(save_path, dpi=dpi, bbox_inches='tight', pad_inches=0)
+        plt.close(fig)
+
+        print(f"Saved: {save_path}")
+
+
 def main():
-    seed = random.randint(0, 100)
+    seeds = [165, 166, 167, 168, 169, 170, 171, 172, 173, 174]
+
+    for seed in seeds:
     
-    # (A) Corridor Map (1m x 5m)
-    cfg_corridor = {
-        "height": 1.0, 
-        "width": 5.0, 
-        "resolution": 0.01,
-        "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
-    }
-    cfg_corridor = {"corridor": cfg_corridor}
-    corridor = CorridorMap(cfg_corridor)
-    corridor.reset_gt_and_belief(seed=seed)
+        # (A) Corridor Map (1m x 5m)
+        cfg_corridor = {
+            "height": 1.0, 
+            "width": 5.0, 
+            "resolution": 0.01,
+            "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
+        }
+        cfg_corridor = {"corridor": cfg_corridor}
+        corridor = CorridorMap(cfg_corridor)
+        corridor.reset_gt_and_belief(seed=seed)
 
-    # (B) Maze Map (2.5m x 2.5m)
-    cfg_maze = {
-        "height": 2.5, 
-        "width": 2.5, 
-        "resolution": 0.01,
-        "corridor_width": 0.3, # 미로 길 폭 25cm
-        "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
-    }
-    cfg_maze = {"maze": cfg_maze}
-    maze = MazeMap(cfg_maze)
-    maze.reset_gt_and_belief(seed=seed)
+        # (B) Maze Map (2.5m x 2.5m)
+        cfg_maze = {
+            "height": 2.5, 
+            "width": 2.5, 
+            "resolution": 0.01,
+            "corridor_width": 0.3, # 미로 길 폭 25cm
+            "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
+        }
+        cfg_maze = {"maze": cfg_maze}
+        maze = MazeMap(cfg_maze)
+        maze.reset_gt_and_belief(seed=seed)
 
-    # (C) Random Obstacle Map (2.5m x 2.5m)
-    cfg_random = {
-        "height": 2.5, 
-        "width": 2.5, 
-        "resolution": 0.01,
-        "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
-    }
-    cfg_random = {"random": cfg_random}
-    random_map = RandomObstacleMap(cfg_random)
-    random_map.reset_gt_and_belief(seed=seed)
+        # (C) Random Obstacle Map (2.5m x 2.5m)
+        cfg_random = {
+            "height": 2.5, 
+            "width": 2.5, 
+            "resolution": 0.01,
+            "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
+        }
+        cfg_random = {"random": cfg_random}
+        random_map = RandomObstacleMap(cfg_random)
+        random_map.reset_gt_and_belief(seed=seed)
 
 
-    # (D) Single Maze Map (2.5m x 2.5m)
-    cfg_single_maze = {
-        "height": 2.5, 
-        "width": 2.5, 
-        "resolution": 0.01,
-        "corridor_width": 0.3, # 미로 길 폭 25cm
-        "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
-    }
-    cfg_single_maze = {"single_maze": cfg_single_maze}
-    single_maze = SingleMazeMap(cfg_single_maze)
-    single_maze.reset_gt_and_belief(seed=seed)
-    
-    # 시각화 실행
-    maps_to_plot = [
-        ("Corridor Map", corridor),
-        ("Maze Map", maze),
-        ("Random Obstacle Map", random_map),
-        ("Single Maze Map", single_maze)
-    ]
+        # (D) Single Maze Map (2.5m x 2.5m)
+        cfg_single_maze = {
+            "height": 2.5, 
+            "width": 2.5, 
+            "resolution": 0.01,
+            "corridor_width": 0.3, # 미로 길 폭 25cm
+            "map_representation": {"free": 0, "occupied": 1, "unknown": 2, "start": 3, "goal": 4}
+        }
+        cfg_single_maze = {"single_maze": cfg_single_maze}
+        single_maze = SingleMazeMap(cfg_single_maze)
+        single_maze.reset_gt_and_belief(seed=seed)
+        
+        # 시각화 실행
+        maps_to_plot = [
+            ("Corridor Map", corridor),
+            ("Maze Map", maze),
+            ("Random Obstacle Map", random_map),
+            ("Single Maze Map", single_maze)
+        ]
 
-    visualize_maps(maps_to_plot, save_path="test_maps_output.png")
+        save_each_map_gt(maps_to_plot, out_dir='gt_maps', flip_rows=True, dpi=300, seed=seed)
+        # visualize_maps(maps_to_plot, save_path="test_maps_output.png")
 
 if __name__ == "__main__":
     main()

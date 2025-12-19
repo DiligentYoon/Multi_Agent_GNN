@@ -293,8 +293,9 @@ def run_simulation_test(args: argparse.Namespace,
 
         # --- Metrics Calculation (end of episode) ---
         total_explorable_region = np.nonzero(env.map_info.gt == env.map_info.map_mask["free"])
+        total_explored_region = env.prev_explored_region - np.nonzero(env.map_info.belief == env.map_info.map_mask["occupied"])[0].shape[0]
         traversal_time_sec = (final_step_num + 1) * env.dt * env.decimation
-        coverage_rate = env.prev_explored_region / (total_explorable_region[0].shape[0])
+        coverage_rate = total_explored_region / (total_explorable_region[0].shape[0])
         connectivity_rate = connected_steps / (final_step_num + 1)
 
         episode_results = {
